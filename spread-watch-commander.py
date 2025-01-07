@@ -6,7 +6,10 @@ from tastytrade.dxfeed import Quote
 import os
 from rich.console import Console
 from rich.table import Table
+from rich.panel import Panel
+from rich.text import Text
 from rich import box
+from datetime import datetime
 
 # Initialize Rich console
 console = Console()
@@ -15,12 +18,15 @@ console = Console()
 TASTYTRADE_USERNAME = os.environ.get('TASTY_USER', '')
 TASTYTRADE_PASSWORD = os.environ.get('TASTY_PASS', '')
 
-async def process_quotes(streamer: DXLinkStreamer, prices: dict[str, Decimal]):
+DATA_FILE = "data/sample-watchlist.csv"  # Example path to the CSV data file
+
+async def process_quotes(streamer: DXLinkStreamer, prices: dict[str, Decimal], update_event):
     """Listen to live quotes and update current prices."""
     async for quote in streamer.listen(Quote):
         if quote and quote.bid_price is not None and quote.ask_price is not None:
             market_price = (quote.bid_price + quote.ask_price) / 2
             prices[quote.event_symbol] = market_price
+        update_event.set()  # Notify an update has occurred
 
 def calculate_strategy_net_credit_debit(df: pd.DataFrame) -> pd.DataFrame:
     """Calculate net value of strategies based on market prices."""
@@ -30,13 +36,24 @@ def calculate_strategy_net_credit_debit(df: pd.DataFrame) -> pd.DataFrame:
 async def async_main(df, prices, session):
     """Main asynchronous loop to update and display market data."""
     previous_prices = {symbol: 0 for symbol in df['streamer_symbol']}
+    previous_net_values = {}
     symbol_list = df['streamer_symbol'].tolist()
+
+    update_event = asyncio.Event()
+    last_update_time = datetime.now()
 
     async with DXLinkStreamer(session) as streamer:
         await streamer.subscribe(Quote, symbol_list)
-        asyncio.create_task(process_quotes(streamer, prices))
+        asyncio.create_task(process_quotes(streamer, prices, update_event))
 
         while True:
+            # Wait for the update event to be set
+            await update_event.wait()
+            update_event.clear()
+
+            # Record the last update time
+            last_update_time = datetime.now()
+
             # Update market prices
             for symbol in prices:
                 current_price = float(prices[symbol])
@@ -46,16 +63,33 @@ async def async_main(df, prices, session):
 
             # Clear screen and build a table
             console.clear()
-            table = Table(show_header=True, header_style="bold magenta", box=box.SIMPLE)
+            header_text = Text("Portfolio Strategy Monitor", style="bold underline")
+            console.rule(header_text)
 
+            # Display CSV file information
+            file_info = Text(f"Data Source: {DATA_FILE}", style="bold yellow")
+            console.print(file_info)
+
+            # Strategy table
+            table = Table(show_header=True, header_style="bold magenta", box=box.SIMPLE)
             table.add_column("Group Name", style="dim", width=12)
             table.add_column("Net Credit/Debit", justify="right")
+
             for idx, row in net_credit_debit.iterrows():
-                color = "green" if row['net_value'] > 0 else "red"
+                previous_net_value = previous_net_values.get(row['group_name'], 0)
+                if row['net_value'] > previous_net_value:
+                    color = "green"
+                elif row['net_value'] < previous_net_value:
+                    color = "red"
+                else:
+                    color = "white"
+
                 table.add_row(row['group_name'], f"[{color}]{row['net_value']:.2f}[/{color}]")
+                previous_net_values[row['group_name']] = row['net_value']
 
             console.print(table)
 
+            # Detail table
             detail_table = Table(show_header=True, header_style="bold cyan", box=box.SIMPLE)
             detail_table.add_column("Group Name", style="dim", width=12)
             detail_table.add_column("Symbol", style="bold")
@@ -79,11 +113,22 @@ async def async_main(df, prices, session):
 
             console.print(detail_table)
 
-            await asyncio.sleep(1)
+            # Display current time without seconds and seconds since last update
+            current_time = datetime.now().strftime("%H:%M")
+            seconds_since_last_update = (datetime.now() - last_update_time).seconds
+            update_message = f"Current time: {current_time} | Last update: {seconds_since_last_update}s ago"
+
+            console.print(update_message)
+
+            # Press Ctrl+C message
+            quit_message = Panel(Text("Press Ctrl+C to quit", justify="center", style="bold white on blue"), title="Instruction")
+            console.print(quit_message)
+
+            await asyncio.sleep(1)  # Keep refreshing every second for real-time updates
 
 def main():
     session = Session(TASTYTRADE_USERNAME, TASTYTRADE_PASSWORD)
-    df = pd.read_csv("data/sample-watchlist.csv")
+    df = pd.read_csv(DATA_FILE)
     df['market_price'] = 0.0
     prices: Dict[str, Decimal] = {}
 
