@@ -16,3 +16,10 @@ source bin/activate
 ```
 pip install -r requirements.txt
 ```
+
+# Optional
+- set user environment variables (better not to write in a file)
+```bash
+export TASTY_USER="your-tasty-username"
+export TASTY_PASS="your-tasty-password"
+```
