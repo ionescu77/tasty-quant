@@ -1,7 +1,16 @@
 # tasty-quant
-Some tools and helpers for tastytrade
+Some tools and helpers for tastytrade.
+
+Thanks to
+| * | URL |
+| --- | --- |
+| sdk and cli | https://github.com/tastyware/tastytrade-cli |
+| from tstytrade Reddit | https://gist.github.com/dboonstra/f081e3d439bf3559af6e2ede22b3481f |
 
 ## spread-watch-commander.py
+```bash
+spread-watch-commander.py
+```
 Inspired by Midnight Commander
 
 It will display and update the prices for your option-stragies.
@@ -36,7 +45,9 @@ Current time: 22:59 | Last update: 0s ago
 ```
 
 ## positions_with_streamer_symbols.py
-
+```bash
+positions_with_streamer_symbols.py
+```
 We needed a way to find out the DX Feed streamer symbols for your portfolio, so run this:
 
 ```bash
@@ -98,3 +109,8 @@ export TASTY_USER="your-tasty-username"
 export TASTY_PASS="your-tasty-password"
 ```
 
+# To-Do
+- [ ] generate the `watchlist.csv` from the user portfolio (take into account multiple `Account`s sic)
+- [ ] add the tickers to a DB (sqlite or TimeSeriesDB?)
+- [ ] Create a GUI (Streamlit?) for ticker history & portfolio heatmap
+- [ ] etc.
