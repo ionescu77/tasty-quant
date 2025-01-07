@@ -8,3 +8,11 @@ Some tools and helpers for tastytrade
 ```
 python3 -m venv .
 ```
+- source venv
+```bash
+source bin/activate
+```
+- install requirements
+```
+pip install -r requirements.txt
+```
