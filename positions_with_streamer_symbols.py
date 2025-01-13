@@ -1,4 +1,7 @@
 import asyncio
+import argparse
+import csv
+import os
 from rich.console import Console
 from rich.table import Table
 from tastytrade.instruments import InstrumentType, Option
@@ -14,7 +17,7 @@ from utils import (
     print_warning,
 )
 
-async def main():
+async def main(export_csv: bool):
     sesh = RenewableSession()
     console = Console()
     table = Table(header_style="bold", title_style="bold", title="Positions with Streamer Symbols")
@@ -36,6 +39,8 @@ async def main():
     options = Option.get_options(sesh, options_symbols) if options_symbols else []
     options_dict = {o.symbol: o for o in options}
 
+    csv_data = [] if export_csv else None  # Prepare data for CSV export
+
     for i, pos in enumerate(positions):
         row = [f"{i+1}"]
 
@@ -52,15 +57,45 @@ async def main():
         # Adjust quantity to be negative if the position is short
         adjusted_quantity = pos.quantity if pos.quantity_direction == "Long" else -pos.quantity
 
-        row.extend([
+        # Split the Symbol to get group_name
+        group_name = pos.symbol.split()[0]
+
+        # Append row to table
+        table.add_row(
+            str(i + 1),
             pos.symbol,
             streamer_symbol,
             f"{adjusted_quantity:g}",
             position_type
-        ])
-        table.add_row(*row)
+        )
 
+        # Prepare CSV row if export is enabled
+        if export_csv and streamer_symbol != "N/A":
+            csv_data.append([group_name, streamer_symbol, adjusted_quantity])
+
+    # Export to CSV if requested
+    if export_csv:
+        csv_path = os.path.join("data", "positions-watchlist.csv")
+        os.makedirs("data", exist_ok=True)  # Ensure data directory exists
+
+        with open(csv_path, mode="w", newline='') as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(["group_name", "streamer_symbol", "quantity"])
+            writer.writerows(csv_data)
+
+    # Display the table
     console.print(table)
 
+    # Print CSV export message if applicable
+    if export_csv:
+        console.print(f"Portfolio Position with Symbols saved to {csv_path}", style="green")
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description="Display portfolio positions with streamer symbols.")
+    parser.add_argument(
+        "--export-csv",
+        action="store_true",
+        help="Export the positions data to data/positions-watchlist.csv"
+    )
+    args = parser.parse_args()
+    asyncio.run(main(export_csv=args.export_csv))
