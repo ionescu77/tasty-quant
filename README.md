@@ -21,6 +21,23 @@ or use `positions_with_streamer_symbols.py --export-csv` to generate the file ba
 
 A sample `data/sample-watch.csv` is provided as an example.
 
+### **Usage Examples:**
+
+   - **Default (Display Strategies Only):**
+     ```bash
+     python spread-watch-commander.py
+     ```
+
+   - **Display Details Only:**
+     ```bash
+     python spread-watch-commander.py --details
+     ```
+
+   - **Display Both Strategies and Details:**
+     ```bash
+     python spread-watch-commander.py --strategies --details
+     ```
+
 ```
 Data Source: data/sample-watchlist.csv
 
