@@ -18,7 +18,7 @@ console = Console()
 TASTYTRADE_USERNAME = os.environ.get('TASTY_USER', '')
 TASTYTRADE_PASSWORD = os.environ.get('TASTY_PASS', '')
 
-DATA_FILE = "data/sample-watchlist.csv"  # Example path to the CSV data file
+DATA_FILE = "data/positions-watchlist.csv"  # Example path to the CSV data file
 
 async def process_quotes(streamer: DXLinkStreamer, prices: dict[str, Decimal], update_event):
     """Listen to live quotes and update current prices."""

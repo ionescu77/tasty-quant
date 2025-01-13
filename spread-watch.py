@@ -30,7 +30,7 @@ def calculate_strategy_net_credit_debit(df: pd.DataFrame) -> pd.DataFrame:
 
 async def main():
     session = Session(TASTYTRADE_USERNAME, TASTYTRADE_PASSWORD)
-    df = pd.read_csv("data/sample-watchlist.csv")
+    df = pd.read_csv("data/positions-watchlist.csv")
     df['market_price'] = 0.0
     symbol_list = df['streamer_symbol'].tolist()
     prices: Dict[str, Decimal] = {}
