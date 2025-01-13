@@ -9,9 +9,7 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 from rich import box
-from rich.columns import Columns  # Import Columns
 from datetime import datetime
-from typing import Dict  # Ensure Dict is imported
 
 # Initialize Rich console
 console = Console()
@@ -34,10 +32,6 @@ def calculate_strategy_net_credit_debit(df: pd.DataFrame) -> pd.DataFrame:
     """Calculate net value of strategies based on market prices."""
     df['net_value'] = df['market_price'] * df['quantity']
     return df.groupby('group_name')['net_value'].sum().reset_index()
-
-def chunk_dataframe(df: pd.DataFrame, chunk_size: int) -> list[pd.DataFrame]:
-    """Split the dataframe into chunks of specified size."""
-    return [df.iloc[i:i + chunk_size] for i in range(0, len(df), chunk_size)]
 
 async def async_main(df, prices, session):
     """Main asynchronous loop to update and display market data."""
@@ -67,7 +61,7 @@ async def async_main(df, prices, session):
 
             net_credit_debit = calculate_strategy_net_credit_debit(df)
 
-            # Clear screen and build a layout
+            # Clear screen and build a table
             console.clear()
             header_text = Text("Portfolio Strategy Monitor", style="bold underline")
             console.rule(header_text)
@@ -95,43 +89,29 @@ async def async_main(df, prices, session):
 
             console.print(table)
 
-            # Detail tables split into multiple columns
-            chunk_size = 10  # Number of positions per column
-            detail_chunks = chunk_dataframe(df, chunk_size)
-            detail_tables = []
+            # Detail table
+            detail_table = Table(show_header=True, header_style="bold cyan", box=box.SIMPLE)
+            detail_table.add_column("Group Name", style="dim", width=12)
+            detail_table.add_column("Symbol", style="bold")
+            detail_table.add_column("Quantity", justify="right")
+            detail_table.add_column("Market Price", justify="right")
 
-            for chunk in detail_chunks:
-                detail_table = Table(show_header=True, header_style="bold cyan", box=box.SIMPLE, show_lines=True)
-                detail_table.add_column("Group Name", style="dim", width=12)
-                detail_table.add_column("Symbol", style="bold")
-                detail_table.add_column("Quantity", justify="right")
-                detail_table.add_column("Market Price", justify="right")
+            for idx, row in df.iterrows():
+                current_price = row['market_price']
+                prev_price = previous_prices[row['streamer_symbol']]
+                color = "green" if current_price > prev_price else "red" if current_price < prev_price else "white"
 
-                for idx, row in chunk.iterrows():
-                    current_price = row['market_price']
-                    prev_price = previous_prices[row['streamer_symbol']]
-                    if current_price > prev_price:
-                        color = "green"
-                    elif current_price < prev_price:
-                        color = "red"
-                    else:
-                        color = "white"
+                detail_table.add_row(
+                    row['group_name'],
+                    row['streamer_symbol'],
+                    str(row['quantity']),
+                    f"[{color}]{current_price:.2f}[/{color}]"
+                )
 
-                    detail_table.add_row(
-                        row['group_name'],
-                        row['streamer_symbol'],
-                        str(row['quantity']),
-                        f"[{color}]{current_price:.2f}[/{color}]"
-                    )
+                # Update previous prices
+                previous_prices[row['streamer_symbol']] = current_price
 
-                    # Update previous prices
-                    previous_prices[row['streamer_symbol']] = current_price
-
-                detail_tables.append(detail_table)
-
-            # Arrange detail tables in columns
-            columns = Columns(detail_tables, equal=True)
-            console.print(columns)
+            console.print(detail_table)
 
             # Display current time without seconds and seconds since last update
             current_time = datetime.now().strftime("%H:%M")
@@ -141,11 +121,7 @@ async def async_main(df, prices, session):
             console.print(update_message)
 
             # Press Ctrl+C message
-            quit_message = Panel(
-                Text("Press Ctrl+C to quit", justify="center", style="bold white on blue"),
-                title="Instruction",
-                expand=False
-            )
+            quit_message = Panel(Text("Press Ctrl+C to quit", justify="center", style="bold white on blue"), title="Instruction")
             console.print(quit_message)
 
             await asyncio.sleep(1)  # Keep refreshing every second for real-time updates
