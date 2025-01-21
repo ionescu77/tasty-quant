@@ -17,7 +17,13 @@ It will display and update the prices for your option-stragies.
 
 You should add your positions to the file
 `./data/portfolio-watchlist.csv`
-or use `positions_with_streamer_symbols.py --export-csv` to generate the file based on your current TastyTrade portfolio positions.
+or use
+
+```bash
+python positions_with_streamer_symbols.py --export-csv
+```
+
+to generate the file based on your current TastyTrade portfolio positions.
 
 A sample `data/sample-watch.csv` is provided as an example.
 
@@ -38,30 +44,24 @@ A sample `data/sample-watch.csv` is provided as an example.
      python spread-watch-commander.py --strategies --details
      ```
 
-```
-Data Source: data/sample-watchlist.csv
+### **Example Output**
 
-  Group Name     Net Credit/Debit
- ─────────────────────────────────
-  AAPL                       1.42
-  MU                         4.42
-  bhp                        0.03
+```bash
+────────────────────── Portfolio Strategy Monitor ─────────────────────────
+Data Source: data/positions-watchlist.csv
 
+  Group Name     Net Credit/Debit   Net Open Price   P&L Amount     P&L %
+ ───────────────────────────────────────────────────────────────
+  AAPL                       0.02             0.07        -0.05   -71.43%
+  BAC                        1.05             1.00         0.05     5.00%
+  BCS                        1.75             1.35         0.40    29.63%
+  UBER                       2.32             1.80         0.52    29.17%
+  YOU                        1.75             2.20        -0.45   -20.45%
 
-  Group Name     Symbol            Quantity   Market Price
- ──────────────────────────────────────────────────────────
-  AAPL           .AAPL250117C250         -1           0.76
-  AAPL           .AAPL250117C245          1           2.17
-  MU             .MU250321C105            1           7.97
-  MU             .MU250321C120           -1           3.55
-  bhp            .BHP250117C55           -1           0.03
-  bhp            .BHP250117C52.5          1           0.05
-
-Current time: 22:59 | Last update: 0s ago
-╭───────────────────────────────────────────── Instruction ──────────────────────────────────────────────╮
-│                                          Press Ctrl+C to quit                                          │
-╰────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
+Current time: 17:34 | Last update: 0s ago
+╭───────────────────────── Instruction ─────────────────────────╮
+│                                      Press Ctrl+C to quit                                      │
+╰──────────────────────────────────────────────────────────╯
 ```
 
 ## positions_with_streamer_symbols.py
