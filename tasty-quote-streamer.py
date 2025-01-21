@@ -45,6 +45,9 @@ def setup_logging(logging_config: Dict):
             logging.StreamHandler(sys.stdout)  # Optionally, also log to console
         ]
     )
+    # Override the tastytrade logger to INFO level to suppress DEBUG messages
+    tastytrade_logger = logging.getLogger('tastytrade')
+    tastytrade_logger.setLevel(logging.INFO)
 
 setup_logging(config.get('logging', {}))
 
