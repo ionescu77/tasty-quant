@@ -1,0 +1,18 @@
+# tasty-quote-streamer.yaml
+
+logging:
+  level: ERROR
+  file: tasty-quote-streamer.log
+
+portfolio:
+  file: data/positions-watchlist.csv
+
+output:
+  directory: data/
+  strategy_filename_template: "strategy-mtm-{date}.csv"
+  positions_filename_template: "positions-quotes-{date}.csv"
+
+streaming:
+  symbols: # Optional: Specify symbols here to override the portfolio CSV
+    # - ".AAPL250117C250"
+    # - ".AAPL250117C245"

@@ -176,4 +176,4 @@ bin/
 pyvenv.cfg
 
 # Peersonal Portfolio Data
-data/positions-watchlist.csv
+data/*.csv
