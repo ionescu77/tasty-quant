@@ -17,6 +17,13 @@ from utils import (
     print_warning,
 )
 
+"""
+    - connect to TastyTrade
+    - Query portfolio current positions
+    - Retrieve data with Streamer Symbols
+    - Write positions to csv file
+
+"""
 async def main(export_csv: bool):
     sesh = RenewableSession()
     console = Console()
@@ -26,6 +33,7 @@ async def main(export_csv: bool):
     table.add_column("Streamer Symbol", justify="left")
     table.add_column("Qty", justify="right")
     table.add_column("Position Type", justify="center")
+    table.add_column("Cost", justify="center")
 
     # For simplicity, assuming you're only dealing with one account
     account = sesh.get_account()
@@ -51,6 +59,8 @@ async def main(export_csv: bool):
             if option:
                 streamer_symbol = option.streamer_symbol
 
+        open_price = pos.average_open_price
+
         # Determine position type based on quantity direction
         position_type = "Long" if pos.quantity_direction == "Long" else "Short"
 
@@ -66,12 +76,13 @@ async def main(export_csv: bool):
             pos.symbol,
             streamer_symbol,
             f"{adjusted_quantity:g}",
-            position_type
+            position_type,
+            f"{open_price:.2f}"
         )
 
         # Prepare CSV row if export is enabled
         if export_csv and streamer_symbol != "N/A":
-            csv_data.append([group_name, streamer_symbol, adjusted_quantity])
+            csv_data.append([group_name, streamer_symbol, adjusted_quantity, open_price])
 
     # Export to CSV if requested
     if export_csv:
@@ -80,7 +91,7 @@ async def main(export_csv: bool):
 
         with open(csv_path, mode="w", newline='') as csv_file:
             writer = csv.writer(csv_file)
-            writer.writerow(["group_name", "streamer_symbol", "quantity"])
+            writer.writerow(["group_name", "streamer_symbol", "quantity", "open_price"])
             writer.writerows(csv_data)
 
     # Display the table

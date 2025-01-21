@@ -13,14 +13,13 @@ from rich.text import Text
 from rich import box
 from datetime import datetime
 
+from utils import RenewableSession
+
 # Initialize Rich console
 console = Console()
 
-# Setup environment variables for Tastytrade credentials
-TASTYTRADE_USERNAME = os.environ.get('TASTY_USER', '')
-TASTYTRADE_PASSWORD = os.environ.get('TASTY_PASS', '')
-
-DATA_FILE = "data/positions-watchlist.csv"  # Example path to the CSV data file
+# Path to the CSV positions data file
+DATA_FILE = "data/positions-watchlist.csv"
 
 async def process_quotes(streamer: DXLinkStreamer, prices: dict[str, Decimal], update_event):
     """Listen to live quotes and update current prices."""
@@ -30,15 +29,47 @@ async def process_quotes(streamer: DXLinkStreamer, prices: dict[str, Decimal], u
             prices[quote.event_symbol] = market_price
         update_event.set()  # Notify an update has occurred
 
-def calculate_strategy_net_credit_debit(df: pd.DataFrame) -> pd.DataFrame:
-    """Calculate net value of strategies based on market prices."""
+def calculate_strategy_metrics(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate net value, initial net, P&L amount, P&L percentage, and net open price for each strategy group.
+
+    Args:
+        df (pd.DataFrame): DataFrame containing position data with 'group_name',
+                           'quantity', 'market_price', and 'open_price'.
+
+    Returns:
+        pd.DataFrame: DataFrame with calculated metrics per 'group_name'.
+    """
+    # Calculate current net value: sum of (market_price * quantity) per group
     df['net_value'] = df['market_price'] * df['quantity']
-    return df.groupby('group_name')['net_value'].sum().reset_index()
+    current_net = df.groupby('group_name')['net_value'].sum().reset_index(name='current_net')
+
+    # Calculate initial net value: sum of (open_price * quantity) per group
+    df['initial_net'] = df['open_price'] * df['quantity']
+    initial_net = df.groupby('group_name')['initial_net'].sum().reset_index(name='initial_net')
+
+    # Merge current net and initial net into a single DataFrame
+    metrics = pd.merge(current_net, initial_net, on='group_name')
+
+    # Calculate P&L Amount: current_net - initial_net
+    metrics['pl_amount'] = metrics['current_net'] - metrics['initial_net']
+
+    # Calculate P&L Percentage: (pl_amount / |initial_net|) * 100
+    # use lambda to handle ZeroDivisionError
+    metrics['pl_percentage'] = metrics.apply(
+        lambda row: (row['pl_amount'] / abs(row['initial_net'])) * 100 if row['initial_net'] != 0 else 0,
+        axis=1
+    )
+
+    # Calculate Net Open Price
+    metrics['net_open_price'] = metrics['initial_net']
+
+    return metrics
 
 async def async_main(df, prices: Dict[str, Decimal], session, show_strategies: bool, show_details: bool):
     """Main asynchronous loop to update and display market data."""
     previous_prices = {symbol: 0 for symbol in df['streamer_symbol']}
-    previous_net_values = {}
+    previous_metrics = {}
     symbol_list = df['streamer_symbol'].tolist()
 
     update_event = asyncio.Event()
@@ -61,7 +92,8 @@ async def async_main(df, prices: Dict[str, Decimal], session, show_strategies: b
                 current_price = float(prices[symbol])
                 df.loc[df['streamer_symbol'] == symbol, 'market_price'] = current_price
 
-            net_credit_debit = calculate_strategy_net_credit_debit(df)
+            # Calculate strategy metrics including P&L
+            strategy_metrics = calculate_strategy_metrics(df)
 
             # Clear screen and build a table
             console.clear()
@@ -72,23 +104,40 @@ async def async_main(df, prices: Dict[str, Decimal], session, show_strategies: b
             file_info = Text(f"Data Source: {DATA_FILE}", style="bold yellow")
             console.print(file_info)
 
-            # Conditionally display Strategy table
+            # Conditionally display Strategy table with P&L
             if show_strategies:
                 table = Table(show_header=True, header_style="bold magenta", box=box.SIMPLE)
                 table.add_column("Group Name", style="dim", width=12)
                 table.add_column("Net Credit/Debit", justify="right")
+                table.add_column("Net Open Price", justify="right")  # New Column
+                table.add_column("P&L Amount", justify="right")
+                table.add_column("P&L %", justify="right")
 
-                for idx, row in net_credit_debit.iterrows():
-                    previous_net_value = previous_net_values.get(row['group_name'], 0)
-                    if row['net_value'] > previous_net_value:
+                for idx, row in strategy_metrics.iterrows():
+                    previous_net = previous_metrics.get(row['group_name'], row['current_net'])
+
+                    # Determine color based on P&L Amount
+                    if row['pl_amount'] > 0:
                         color = "green"
-                    elif row['net_value'] < previous_net_value:
+                    elif row['pl_amount'] < 0:
                         color = "red"
                     else:
                         color = "white"
 
-                    table.add_row(row['group_name'], f"[{color}]{row['net_value']:.2f}[/{color}]")
-                    previous_net_values[row['group_name']] = row['net_value']
+                    # Format P&L Amount and Percentage
+                    pl_amount_str = f"[{color}]{row['pl_amount']:.2f}[/{color}]"
+                    pl_percentage_str = f"[{color}]{row['pl_percentage']:.2f}%[/{color}]"
+
+                    table.add_row(
+                        row['group_name'],
+                        f"{row['current_net']:.2f}",
+                        f"{row['net_open_price']:.2f}",  # New Data Field
+                        pl_amount_str,
+                        pl_percentage_str
+                    )
+
+                    # Update previous metrics
+                    previous_metrics[row['group_name']] = row['current_net']
 
                 console.print(table)
 
@@ -103,7 +152,14 @@ async def async_main(df, prices: Dict[str, Decimal], session, show_strategies: b
                 for idx, row in df.iterrows():
                     current_price = row['market_price']
                     prev_price = previous_prices[row['streamer_symbol']]
-                    color = "green" if current_price > prev_price else "red" if current_price < prev_price else "white"
+
+                    # Determine color based on price change
+                    if current_price > prev_price:
+                        color = "green"
+                    elif current_price < prev_price:
+                        color = "red"
+                    else:
+                        color = "white"
 
                     detail_table.add_row(
                         row['group_name'],
@@ -153,7 +209,7 @@ def main():
         show_strategies = args.strategies
         show_details = args.details
 
-    session = Session(TASTYTRADE_USERNAME, TASTYTRADE_PASSWORD)
+    session = RenewableSession()
     df = pd.read_csv(DATA_FILE)
     df['market_price'] = 0.0
     prices: Dict[str, Decimal] = {}
