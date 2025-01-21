@@ -13,6 +13,8 @@ from tastytrade.dxfeed import Quote
 import os
 import logging
 
+from utils import RenewableSession
+
 # --------------------- Configuration Loading ---------------------
 
 def load_config(config_file: str) -> Dict:
@@ -47,14 +49,6 @@ def setup_logging(logging_config: Dict):
 setup_logging(config.get('logging', {}))
 
 # --------------------- Global Variables ---------------------
-
-# Retrieve credentials from environment variables
-TASTYTRADE_USERNAME = os.getenv('TASTY_USER')
-TASTYTRADE_PASSWORD = os.getenv('TASTY_PASS')
-
-if not TASTYTRADE_USERNAME or not TASTYTRADE_PASSWORD:
-    logging.error("TASTYTRADE_USERNAME or TASTYTRADE_PASSWORD environment variables not set.")
-    sys.exit(1)
 
 # Shared dictionary to store latest quotes
 quotes_data: Dict[str, Quote] = {}
@@ -166,8 +160,8 @@ async def update_market_prices(df: pd.DataFrame):
     Utilizes vectorized operations for performance optimization.
     """
     # Create a pandas Series from the prices_data
-    prices_series = pd.Series({symbol: float(quote.bid_price + quote.ask_price) / 2 
-                               if quote.bid_price and quote.ask_price else 0.0 
+    prices_series = pd.Series({symbol: float(quote.bid_price + quote.ask_price) / 2
+                               if quote.bid_price and quote.ask_price else 0.0
                                for symbol, quote in quotes_data.items()})
 
     # Map the 'streamer_symbol' to their latest market prices, filling missing with 0.0
@@ -267,7 +261,7 @@ async def main():
 
     # Create a TastyTrade session with error handling
     try:
-        session = Session(TASTYTRADE_USERNAME, TASTYTRADE_PASSWORD)
+        session = RenewableSession()
     except Exception as e:
         logging.exception(f"Failed to create TastyTrade session: {e}")
         sys.exit(1)
