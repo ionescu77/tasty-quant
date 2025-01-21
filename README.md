@@ -51,7 +51,7 @@ A sample `data/sample-watch.csv` is provided as an example.
 Data Source: data/positions-watchlist.csv
 
   Group Name     Net Credit/Debit   Net Open Price   P&L Amount     P&L %
- ───────────────────────────────────────────────────────────────
+ ──────────────────────────────────────────────────────────────────────────
   AAPL                       0.02             0.07        -0.05   -71.43%
   BAC                        1.05             1.00         0.05     5.00%
   BCS                        1.75             1.35         0.40    29.63%
@@ -59,9 +59,9 @@ Data Source: data/positions-watchlist.csv
   YOU                        1.75             2.20        -0.45   -20.45%
 
 Current time: 17:34 | Last update: 0s ago
-╭───────────────────────── Instruction ─────────────────────────╮
-│                                      Press Ctrl+C to quit                                      │
-╰──────────────────────────────────────────────────────────╯
+╭────────────────────────────── Instruction ──────────────────────────────╮
+│                          Press Ctrl+C to quit                           │
+╰─────────────────────────────────────────────────────────────────────────╯
 ```
 
 ## positions_with_streamer_symbols.py
