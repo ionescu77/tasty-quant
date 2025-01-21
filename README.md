@@ -7,6 +7,10 @@ Thanks to
 | sdk and cli | https://github.com/tastyware/tastytrade-cli |
 | from tstytrade Reddit | https://gist.github.com/dboonstra/f081e3d439bf3559af6e2ede22b3481f |
 
+<img width="852" alt="spread-watch-commander" src="https://github.com/user-attachments/assets/998abf8c-3b24-449e-b41d-870e26132eee" />
+
+
+
 ## spread-watch-commander.py
 ```bash
 spread-watch-commander.py
