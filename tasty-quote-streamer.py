@@ -3,7 +3,7 @@ import signal
 import sys
 from decimal import Decimal
 from typing import List, Dict
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pandas as pd
 import yaml
@@ -62,10 +62,10 @@ shutdown_flag = asyncio.Event()
 # --------------------- Helper Functions ---------------------
 
 def get_today_date() -> str:
-    return datetime.now(datetime.UTC).strftime('%Y%m%d')
+    return datetime.now(timezone.utc).strftime('%Y%m%d')
 
 def get_current_iso_timestamp() -> str:
-    return datetime.now(datetime.UTC).isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 def ensure_directory(directory: str):
     try:
@@ -95,7 +95,7 @@ def initialize_output_files(output_dir: str, strategy_csv: str, positions_csv: s
     if not os.path.exists(positions_csv):
         try:
             pd.DataFrame(columns=[
-                'timestamp', 'group_name', 'streamer_symbol', 'quantity', 'open_price',
+                'timestamp', 'group_name', 'streamer_symbol', 'quantity','open_price',
                 'market_price', 'bid_price', 'ask_price', 'bid_size', 'ask_size'
             ]).to_csv(positions_csv, index=False)
             logging.info(f"Created Positions Quotes CSV: {positions_csv}")
@@ -130,20 +130,20 @@ async def write_positions_csv(positions_csv: str, df: pd.DataFrame):
     )
 
     # Fill NaN values for missing quotes
-    df_quotes[['bid_price', 'ask_price', 'bid_size', 'ask_size']] = df_quotes[
-        ['bid_price', 'ask_price', 'bid_size', 'ask_size']
+    df_quotes[['bid_price', 'ask_price', 'bid_size', 'ask_size','open_price']] = df_quotes[
+        ['bid_price', 'ask_price', 'bid_size', 'ask_size', 'open_price']
     ].fillna(Decimal('0'))
 
     # Prepare the data to write
     df_quotes['timestamp'] = timestamp
     columns = [
-        'timestamp', 'group_name', 'streamer_symbol', 'quantity', 'open_price',
+        'timestamp', 'group_name', 'streamer_symbol', 'quantity','open_price',
         'market_price', 'bid_price', 'ask_price', 'bid_size', 'ask_size'
     ]
     data_to_write = df_quotes[columns].copy()
 
     # Convert Decimal to float for CSV
-    for column in ['bid_price', 'ask_price', 'bid_size', 'ask_size']:
+    for column in ['bid_price', 'ask_price', 'bid_size', 'ask_size', 'open_price']:
         data_to_write[column] = data_to_write[column].astype(float)
 
     try:
@@ -195,6 +195,8 @@ async def periodic_task(df: pd.DataFrame, output_dir: str):
 
     # Initialize output CSV files if they don't exist
     initialize_output_files(output_dir, strategy_csv, positions_csv)
+    logging.info(f"Initializing output files: {strategy_csv}, {positions_csv}")
+
 
     while not shutdown_flag.is_set():
         try:
