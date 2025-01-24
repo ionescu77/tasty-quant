@@ -3,13 +3,32 @@ import pandas as pd
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Set the title of the Streamlit app
 st.title("Equity Options Trading Dashboard")
 
 # Define the path to the data directory
 DATA_DIR = 'data'
+
+def parse_timestamp(ts):
+    """
+    Parses a timestamp string. If the timestamp contains timezone information,
+    it will be treated as a UTC-aware timestamp; otherwise, it will be considered
+    as a naive UTC timestamp.
+
+    Args:
+        ts (str): The timestamp string.
+
+    Returns:
+        pd.Timestamp: The parsed timestamp as a pandas Timestamp object.
+    """
+    ts = ts.strip()  # Remove any leading/trailing whitespace
+    try:
+        return pd.to_datetime(ts, utc=True) if '+' in ts or '-' in ts else pd.to_datetime(ts).replace(tzinfo=timezone.utc)
+    except Exception as e:
+        # Handle the case where the timestamp cannot be parsed
+        return pd.NaT  # Return NaT for invalid timestamps
 
 # Function to load the watchlist
 @st.cache_data
@@ -96,9 +115,11 @@ def load_strategy_mtm(symbol, start_date, end_date):
                 file_path = os.path.join(DATA_DIR, filename)
                 try:
                     df = pd.read_csv(file_path)
-                    # Parse the timestamps
-                    df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True, errors='coerce')
-                    df = df.dropna(subset=['timestamp'])  # Drop rows where timestamp could not be parsed
+
+                    # Use the parsing function for timestamps
+                    df['timestamp'] = df['timestamp'].apply(parse_timestamp)
+                    df = df.dropna(subset=['timestamp'])  # Drop rows with unparseable timestamps
+
                     # Filter by selected symbol
                     df = df[df['group_name'] == symbol]
                     if 'net_value' in df.columns:
