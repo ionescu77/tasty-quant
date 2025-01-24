@@ -44,13 +44,9 @@ def get_all_symbols(data_dir):
 # Function to load and aggregate positions-quotes CSV files
 @st.cache_data
 def load_quotes(symbol, start_date, end_date):
-    """
-    Load and aggregate positions-quotes CSV files for the selected symbol and date range.
-    """
     all_quotes = []
     for filename in os.listdir(DATA_DIR):
         if filename.startswith('positions-quotes') and filename.endswith('.csv'):
-            # Extract date from filename
             try:
                 file_date_str = filename.replace('positions-quotes-', '').replace('.csv', '')
                 file_date = datetime.strptime(file_date_str, '%Y%m%d').date()
@@ -61,7 +57,10 @@ def load_quotes(symbol, start_date, end_date):
             if start_date <= file_date <= end_date:
                 file_path = os.path.join(DATA_DIR, filename)
                 try:
+                    # Read the CSV with parsing timestamps
                     df = pd.read_csv(file_path)
+                    df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True, errors='coerce')
+                    df = df.dropna(subset=['timestamp'])  # Drop rows where timestamp could not be parsed
                     # Filter by selected symbol
                     df = df[df['group_name'] == symbol]
                     all_quotes.append(df)
@@ -70,7 +69,6 @@ def load_quotes(symbol, start_date, end_date):
                     continue
     if all_quotes:
         combined_quotes = pd.concat(all_quotes, ignore_index=True)
-        # Convert relevant columns to numeric, coercing errors to NaN
         numeric_cols = ['quantity', 'market_price', 'bid_price', 'ask_price', 'bid_size', 'ask_size']
         for col in numeric_cols:
             if col in combined_quotes.columns:
@@ -84,13 +82,9 @@ def load_quotes(symbol, start_date, end_date):
 # Function to load and aggregate strategy-mtm CSV files
 @st.cache_data
 def load_strategy_mtm(symbol, start_date, end_date):
-    """
-    Load and aggregate strategy-mtm CSV files for the selected symbol and date range.
-    """
     all_mtm = []
     for filename in os.listdir(DATA_DIR):
         if filename.startswith('strategy-mtm') and filename.endswith('.csv'):
-            # Extract date from filename
             try:
                 file_date_str = filename.replace('strategy-mtm-', '').replace('.csv', '')
                 file_date = datetime.strptime(file_date_str, '%Y%m%d').date()
@@ -102,20 +96,21 @@ def load_strategy_mtm(symbol, start_date, end_date):
                 file_path = os.path.join(DATA_DIR, filename)
                 try:
                     df = pd.read_csv(file_path)
+                    # Parse the timestamps
+                    df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True, errors='coerce')
+                    df = df.dropna(subset=['timestamp'])  # Drop rows where timestamp could not be parsed
                     # Filter by selected symbol
                     df = df[df['group_name'] == symbol]
-                    # Keep only 'timestamp' and 'net_value' columns
-                    if 'timestamp' in df.columns and 'net_value' in df.columns:
+                    if 'net_value' in df.columns:
                         df = df[['timestamp', 'net_value']]
                         all_mtm.append(df)
                     else:
-                        st.warning(f"Required columns not found in {filename}. Skipping.")
+                        st.warning(f"Required column 'net_value' not found in {filename}. Skipping.")
                 except Exception as e:
                     st.warning(f"Error loading {filename}: {e}")
                     continue
     if all_mtm:
         combined_mtm = pd.concat(all_mtm, ignore_index=True)
-        # Convert 'net_value' to numeric, coercing errors to NaN
         if 'net_value' in combined_mtm.columns:
             combined_mtm['net_value'] = pd.to_numeric(combined_mtm['net_value'], errors='coerce')
         else:
