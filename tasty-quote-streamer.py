@@ -95,7 +95,7 @@ def initialize_output_files(output_dir: str, strategy_csv: str, positions_csv: s
     if not os.path.exists(positions_csv):
         try:
             pd.DataFrame(columns=[
-                'timestamp', 'group_name', 'streamer_symbol', 'quantity',
+                'timestamp', 'group_name', 'streamer_symbol', 'quantity', 'open_price',
                 'market_price', 'bid_price', 'ask_price', 'bid_size', 'ask_size'
             ]).to_csv(positions_csv, index=False)
             logging.info(f"Created Positions Quotes CSV: {positions_csv}")
@@ -137,7 +137,7 @@ async def write_positions_csv(positions_csv: str, df: pd.DataFrame):
     # Prepare the data to write
     df_quotes['timestamp'] = timestamp
     columns = [
-        'timestamp', 'group_name', 'streamer_symbol', 'quantity',
+        'timestamp', 'group_name', 'streamer_symbol', 'quantity', 'open_price',
         'market_price', 'bid_price', 'ask_price', 'bid_size', 'ask_size'
     ]
     data_to_write = df_quotes[columns].copy()
