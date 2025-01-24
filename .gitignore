@@ -177,3 +177,7 @@ pyvenv.cfg
 
 # Peersonal Portfolio Data
 data/*.csv
+
+# Ignore Jupiter
+etc/*
+share/*
