@@ -529,6 +529,9 @@ else:
             if not strategy_mtm_agg.empty:
                 fig_mtm = go.Figure()
 
+                min_value = strategy_mtm_agg['net_value'].min()
+                max_value = strategy_mtm_agg['net_value'].max()
+
                 # Plot Strategy MTM Net Price
                 fig_mtm.add_trace(go.Scatter(
                     x=strategy_mtm_agg['timestamp'],
@@ -538,6 +541,26 @@ else:
                     line=dict(color='darkgreen'),
                     showlegend=True
                 ))
+
+                # Add min value annotation
+                fig_mtm.add_annotation(
+                    x=strategy_mtm_agg.loc[strategy_mtm_agg['net_value'].idxmin(), 'timestamp'],
+                    y=min_value,
+                    text=f'Min: {min_value:.2f}',
+                    showarrow=True,
+                    arrowhead=1,
+                    yshift=10
+                )
+
+                # Add max value annotation
+                fig_mtm.add_annotation(
+                    x=strategy_mtm_agg.loc[strategy_mtm_agg['net_value'].idxmax(), 'timestamp'],
+                    y=max_value,
+                    text=f'Max: {max_value:.2f}',
+                    showarrow=True,
+                    arrowhead=1,
+                    yshift=-10
+                )
 
                 # Plot Acquisition Price Line if enabled and available
                 if show_acquisition_price and net_acquisition_price is not None:
