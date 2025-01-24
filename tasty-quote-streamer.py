@@ -62,10 +62,10 @@ shutdown_flag = asyncio.Event()
 # --------------------- Helper Functions ---------------------
 
 def get_today_date() -> str:
-    return datetime.utcnow().strftime('%Y%m%d')
+    return datetime.now(datetime.UTC).strftime('%Y%m%d')
 
 def get_current_iso_timestamp() -> str:
-    return datetime.utcnow().isoformat()
+    return datetime.now(datetime.UTC).isoformat()
 
 def ensure_directory(directory: str):
     try:
