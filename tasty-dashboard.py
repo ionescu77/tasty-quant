@@ -124,6 +124,40 @@ def load_strategy_mtm(symbol, start_date, end_date):
     else:
         return pd.DataFrame()
 
+"""
+    Claude sugggested to define function
+"""
+
+def filter_data_by_timeframe(df, timeframe):
+    """Filter DataFrame based on selected timeframe."""
+    if df.empty:
+        return df
+
+    current_time = pd.Timestamp.now()
+
+    if timeframe == "Intraday":
+        # Show only today's data
+        start_time = current_time.normalize()  # Start of today
+        return df[df['timestamp'].dt.date == current_time.date()]
+
+    elif timeframe == "Weekly":
+        # Show current week's data
+        start_time = current_time - pd.Timedelta(days=current_time.dayofweek)
+        return df[df['timestamp'] >= start_time]
+
+    elif timeframe == "Monthly":
+        # Show current month's data
+        start_time = current_time.replace(day=1)
+        return df[df['timestamp'] >= start_time]
+
+    elif timeframe == "Year":
+        # Show current year's data
+        start_time = current_time.replace(month=1, day=1)
+        return df[df['timestamp'] >= start_time]
+
+    # Default case ("All"): return all data
+    return df
+
 # Load the watchlist
 watchlist_path = os.path.join(DATA_DIR, 'positions-watchlist.csv')
 watchlist_df = load_watchlist(watchlist_path)
@@ -220,7 +254,15 @@ else:
 
     # Sidebar - Timeframe and Interval Selection
     st.sidebar.markdown("### Timeframe and Interval Selection")
-    timeframe = st.sidebar.selectbox("Select Timeframe", ["All", "Year", "Monthly", "Weekly", "Intraday"])
+    timeframe = st.sidebar.selectbox(
+        "Select Timeframe",
+        ["All", "Year", "Monthly", "Weekly", "Intraday"],
+        help="All: Show all available data\n"
+             "Year: Show current year's data\n"
+             "Monthly: Show current month's data\n"
+             "Weekly: Show current week's data\n"
+             "Intraday: Show today's data"
+    )
     interval = st.sidebar.selectbox("Select Interval",
                                     ["1 Minute", "5 Minutes", "15 Minutes", "30 Minutes", "1 Hour",
                                      "Daily", "Weekly", "Monthly"])
@@ -257,6 +299,27 @@ else:
         st.write(strategy_mtm_df.head())
         st.write("### Strategy MTM DataFrame Data Types:")
         st.write(strategy_mtm_df.dtypes)
+
+    """ Claude suggested: """
+    # Filter data based on selected timeframe
+    if timeframe != "All":
+        # Filter quotes_df
+        if not quotes_df.empty:
+            quotes_df['timestamp'] = pd.to_datetime(quotes_df['timestamp'])
+            quotes_df = filter_data_by_timeframe(quotes_df, timeframe)
+
+        # Filter strategy_mtm_df
+        if not strategy_mtm_df.empty:
+            if 'timestamp' in strategy_mtm_df.columns:
+                strategy_mtm_df['timestamp'] = pd.to_datetime(strategy_mtm_df['timestamp'])
+            else:
+                strategy_mtm_df = strategy_mtm_df.reset_index()
+                strategy_mtm_df['timestamp'] = pd.to_datetime(strategy_mtm_df['timestamp'])
+            strategy_mtm_df = filter_data_by_timeframe(strategy_mtm_df, timeframe)
+
+        if quotes_df.empty and strategy_mtm_df.empty:
+            st.warning(f"No data available for the selected {timeframe} timeframe.")
+    """ End of Claude """
 
     # Check if quote data is available
     if quotes_df.empty:
