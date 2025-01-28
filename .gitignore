@@ -183,3 +183,6 @@ data/*.csv.old
 # Ignore Jupiter
 etc/*
 share/*
+
+# Other
+generated_crontab.txt

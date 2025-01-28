@@ -16,3 +16,8 @@ streaming:
   symbols: # Optional: Specify symbols here to override the portfolio CSV
     # - ".AAPL250117C250"
     # - ".AAPL250117C245"
+
+market:
+  open_utc: "14:30" # NYSE opens at 9:30 AM EST, which is 14:30 UTC
+  close_utc: "21:00" # NYSE closes at 4:00 PM EST, which is 21:00 UTC
+  timezone: "Europe/Bucharest" # Specify your local timezone
