@@ -129,7 +129,7 @@ async def write_positions_csv(positions_csv: str, df: pd.DataFrame):
         how='left'
     )
 
-    # Fill NaN values for missing quotes
+    # Ensure required columns are present
     required_columns = ['bid_price', 'ask_price', 'bid_size', 'ask_size', 'open_price']
     for col in required_columns:
         if col not in df_quotes.columns:
@@ -231,7 +231,9 @@ async def periodic_task(df: pd.DataFrame, output_dir: str, symbols: List[str]):
             # Proceed only with available symbols
             if available_symbols:
                 filtered_df = df[df['streamer_symbol'].isin(available_symbols)].copy()
-                await write_strategy_csv(strategy_csv, net_credit_debit[net_credit_debit['group_name'].isin(filtered_df['group_name'])])
+                # Calculate net_value only for available symbols
+                filtered_net_credit_debit = calculate_strategy_net_credit_debit(filtered_df)
+                await write_strategy_csv(strategy_csv, filtered_net_credit_debit)
                 await write_positions_csv(positions_csv, filtered_df)
                 logging.debug(filtered_df[['group_name', 'streamer_symbol', 'quantity', 'market_price']].to_string(index=False))
             else:
@@ -290,6 +292,11 @@ async def main():
     # Initialize market_price column
     df['market_price'] = 0.0
 
+    # Register signal handlers for graceful shutdown within the main coroutine
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, handle_shutdown)
+
     # Create a TastyTrade session with error handling
     try:
         session = RenewableSession()
@@ -324,12 +331,6 @@ async def main():
         logging.info("Shutdown complete.")
 
 if __name__ == "__main__":
-    # Register signal handlers for graceful shutdown
-    loop = asyncio.get_event_loop()
-
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, handle_shutdown)
-
     try:
         asyncio.run(main())
     except Exception as e:
