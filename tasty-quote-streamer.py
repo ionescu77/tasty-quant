@@ -181,12 +181,13 @@ def calculate_strategy_net_credit_debit(df: pd.DataFrame) -> pd.DataFrame:
 async def update_market_prices(df: pd.DataFrame):
     """
     Update the market prices in the DataFrame based on the latest quotes_data.
-    Utilizes vectorized operations for performance optimization.
     """
     # Create a pandas Series from the prices_data
-    prices_series = pd.Series({symbol: (float(quote.bid_price) + float(quote.ask_price)) / 2
-                               if quote.bid_price and quote.ask_price else 0.0
-                               for symbol, quote in quotes_data.items()})
+    prices_series = pd.Series({
+        symbol: (float(quote.bid_price) + float(quote.ask_price)) / 2
+        for symbol, quote in quotes_data.items()
+        if quote.bid_price is not None and quote.ask_price is not None
+    })
 
     # Map the 'streamer_symbol' to their latest market prices, filling missing with 0.0
     df['market_price'] = df['streamer_symbol'].map(prices_series).fillna(0.0)
@@ -218,41 +219,40 @@ async def periodic_task(df: pd.DataFrame, output_dir: str, symbols: List[str]):
     initialize_output_files(output_dir, strategy_csv, positions_csv)
     logging.info(f"Initializing output files: {strategy_csv}, {positions_csv}")
 
-    # Wait until all symbols have received bid and ask data
-    logging.info("Waiting for all symbols to receive bid & ask data before starting calculations...")
-    while True:
-        missing_symbols = [symbol for symbol in symbols if symbol not in quotes_data or
-                           not quotes_data[symbol].bid_price or
-                           not quotes_data[symbol].ask_price]
-        if not missing_symbols:
-            logging.info("All symbols have received bid & ask data. Starting calculations.")
-            break
-        logging.info(f"Still waiting for data on symbols: {missing_symbols}")
-        await asyncio.sleep(5)  # Wait for 5 seconds before rechecking
-
     while not shutdown_flag.is_set():
         try:
-            logging.info("Updating Market Prices...")
-            await update_market_prices(df)
-            net_credit_debit = calculate_strategy_net_credit_debit(df)
-            logging.info("Net Credit/Debit Per Strategy:")
-            logging.info(net_credit_debit.to_string(index=False))
-
-            # Filter symbols with complete bid & ask data
-            available_symbols = [symbol for symbol in symbols if symbol in quotes_data and
-                                 quotes_data[symbol].bid_price and
-                                 quotes_data[symbol].ask_price]
+            # Collect symbols with available bid & ask data (not None)
+            available_symbols = [
+                symbol for symbol in symbols
+                if symbol in quotes_data and
+                quotes_data[symbol].bid_price is not None and
+                quotes_data[symbol].ask_price is not None
+            ]
             missing_symbols = [symbol for symbol in symbols if symbol not in available_symbols]
 
             if missing_symbols:
-                logging.warning(f"Missing bid & ask data for symbols: {missing_symbols}. Skipping their net_value calculation.")
+                for symbol in missing_symbols:
+                    if symbol not in quotes_data:
+                        logging.warning(f"No quote data received for symbol: {symbol}")
+                    else:
+                        quote = quotes_data[symbol]
+                        if quote.bid_price is None and quote.ask_price is None:
+                            logging.warning(f"Both bid and ask prices are missing for symbol: {symbol}")
+                        elif quote.bid_price is None:
+                            logging.warning(f"Bid price is missing for symbol: {symbol}")
+                        elif quote.ask_price is None:
+                            logging.warning(f"Ask price is missing for symbol: {symbol}")
+                logging.warning(f"Proceeding without data for symbols: {missing_symbols}")
 
-            # Proceed only with available symbols
             if available_symbols:
                 filtered_df = df[df['streamer_symbol'].isin(available_symbols)].copy()
-                # Calculate net_value only for available symbols
-                filtered_net_credit_debit = calculate_strategy_net_credit_debit(filtered_df)
-                await write_strategy_csv(strategy_csv, filtered_net_credit_debit)
+                logging.info("Updating Market Prices...")
+                await update_market_prices(filtered_df)
+                net_credit_debit = calculate_strategy_net_credit_debit(filtered_df)
+                logging.info("Net Credit/Debit Per Strategy:")
+                logging.info(net_credit_debit.to_string(index=False))
+
+                await write_strategy_csv(strategy_csv, net_credit_debit)
                 await write_positions_csv(positions_csv, filtered_df)
                 logging.debug(filtered_df[['group_name', 'streamer_symbol', 'quantity', 'market_price']].to_string(index=False))
             else:
@@ -266,6 +266,8 @@ async def periodic_task(df: pd.DataFrame, output_dir: str, symbols: List[str]):
             await asyncio.wait_for(shutdown_flag.wait(), timeout=60.0)
         except asyncio.TimeoutError:
             continue
+
+
 
 def handle_shutdown():
     """
