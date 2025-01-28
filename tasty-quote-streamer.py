@@ -250,7 +250,7 @@ async def periodic_task(df: pd.DataFrame, output_dir: str, symbols: List[str]):
                 await update_market_prices(filtered_df)
                 net_credit_debit = calculate_strategy_net_credit_debit(filtered_df)
                 logging.info("Net Credit/Debit Per Strategy:")
-                logging.info(net_credit_debit.to_string(index=False))
+                logging.debug(net_credit_debit.to_string(index=False))
 
                 await write_strategy_csv(strategy_csv, net_credit_debit)
                 await write_positions_csv(positions_csv, filtered_df)
