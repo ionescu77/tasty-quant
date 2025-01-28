@@ -130,9 +130,11 @@ async def write_positions_csv(positions_csv: str, df: pd.DataFrame):
     )
 
     # Fill NaN values for missing quotes
-    df_quotes[['bid_price', 'ask_price', 'bid_size', 'ask_size','open_price']] = df_quotes[
-        ['bid_price', 'ask_price', 'bid_size', 'ask_size', 'open_price']
-    ].fillna(Decimal('0'))
+    required_columns = ['bid_price', 'ask_price', 'bid_size', 'ask_size', 'open_price']
+    for col in required_columns:
+        if col not in df_quotes.columns:
+            df_quotes[col] = Decimal('0')
+    df_quotes[required_columns] = df_quotes[required_columns].fillna(Decimal('0'))
 
     # Prepare the data to write
     df_quotes['timestamp'] = timestamp
@@ -163,7 +165,7 @@ async def update_market_prices(df: pd.DataFrame):
     Utilizes vectorized operations for performance optimization.
     """
     # Create a pandas Series from the prices_data
-    prices_series = pd.Series({symbol: float(quote.bid_price + quote.ask_price) / 2
+    prices_series = pd.Series({symbol: (float(quote.bid_price) + float(quote.ask_price)) / 2
                                if quote.bid_price and quote.ask_price else 0.0
                                for symbol, quote in quotes_data.items()})
 
@@ -184,7 +186,7 @@ async def process_quotes(streamer: DXLinkStreamer):
     except Exception as e:
         logging.exception(f"Error in process_quotes: {e}")
 
-async def periodic_task(df: pd.DataFrame, output_dir: str):
+async def periodic_task(df: pd.DataFrame, output_dir: str, symbols: List[str]):
     """
     Periodically update market prices, calculate net credit/debit, and write to CSVs.
     """
@@ -197,20 +199,44 @@ async def periodic_task(df: pd.DataFrame, output_dir: str):
     initialize_output_files(output_dir, strategy_csv, positions_csv)
     logging.info(f"Initializing output files: {strategy_csv}, {positions_csv}")
 
+    # Wait until all symbols have received bid and ask data
+    logging.info("Waiting for all symbols to receive bid & ask data before starting calculations...")
+    while True:
+        missing_symbols = [symbol for symbol in symbols if symbol not in quotes_data or
+                           not quotes_data[symbol].bid_price or
+                           not quotes_data[symbol].ask_price]
+        if not missing_symbols:
+            logging.info("All symbols have received bid & ask data. Starting calculations.")
+            break
+        logging.info(f"Still waiting for data on symbols: {missing_symbols}")
+        await asyncio.sleep(5)  # Wait for 5 seconds before rechecking
 
     while not shutdown_flag.is_set():
         try:
             logging.info("Updating Market Prices...")
-
             await update_market_prices(df)
             net_credit_debit = calculate_strategy_net_credit_debit(df)
             logging.info("Net Credit/Debit Per Strategy:")
             logging.info(net_credit_debit.to_string(index=False))
 
-            await write_strategy_csv(strategy_csv, net_credit_debit)
-            await write_positions_csv(positions_csv, df)
+            # Filter symbols with complete bid & ask data
+            available_symbols = [symbol for symbol in symbols if symbol in quotes_data and
+                                 quotes_data[symbol].bid_price and
+                                 quotes_data[symbol].ask_price]
+            missing_symbols = [symbol for symbol in symbols if symbol not in available_symbols]
 
-            logging.debug(df[['group_name', 'streamer_symbol', 'quantity', 'market_price']].to_string(index=False))
+            if missing_symbols:
+                logging.warning(f"Missing bid & ask data for symbols: {missing_symbols}. Skipping their net_value calculation.")
+
+            # Proceed only with available symbols
+            if available_symbols:
+                filtered_df = df[df['streamer_symbol'].isin(available_symbols)].copy()
+                await write_strategy_csv(strategy_csv, net_credit_debit[net_credit_debit['group_name'].isin(filtered_df['group_name'])])
+                await write_positions_csv(positions_csv, filtered_df)
+                logging.debug(filtered_df[['group_name', 'streamer_symbol', 'quantity', 'market_price']].to_string(index=False))
+            else:
+                logging.warning("No symbols have complete bid & ask data for this cycle. Skipping CSV write.")
+
         except Exception as e:
             logging.exception(f"Error in periodic_task: {e}")
 
@@ -220,14 +246,14 @@ async def periodic_task(df: pd.DataFrame, output_dir: str):
         except asyncio.TimeoutError:
             continue
 
-def handle_shutdown(loop):
+def handle_shutdown():
     """
     Signal handler to initiate graceful shutdown.
     """
     logging.info("Received stop signal. Initiating graceful shutdown...")
     shutdown_flag.set()
 
-def load_symbols_from_portfolio(portfolio_file: str) -> List[str]:
+def load_symbols_from_portfolio(portfolio_file: str) -> (List[str], pd.DataFrame):
     try:
         df = pd.read_csv(portfolio_file)
         symbols = df['streamer_symbol'].dropna().unique().tolist()
@@ -284,7 +310,7 @@ async def main():
         quote_task = asyncio.create_task(process_quotes(streamer))
 
         # Start periodic update task
-        periodic_update_task = asyncio.create_task(periodic_task(df, output_dir))
+        periodic_update_task = asyncio.create_task(periodic_task(df, output_dir, symbols))
 
         # Wait until shutdown is triggered
         await shutdown_flag.wait()
@@ -298,15 +324,15 @@ async def main():
         logging.info("Shutdown complete.")
 
 if __name__ == "__main__":
-    # Get the current event loop
+    # Register signal handlers for graceful shutdown
     loop = asyncio.get_event_loop()
 
-    # Register signal handlers for graceful shutdown
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda: handle_shutdown(loop))
+        loop.add_signal_handler(sig, handle_shutdown)
 
     try:
-        loop.run_until_complete(main())
+        asyncio.run(main())
+    except Exception as e:
+        logging.exception(f"An error occurred: {e}")
     finally:
-        loop.close()
         logging.info("Event loop closed.")
