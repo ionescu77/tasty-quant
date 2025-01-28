@@ -51,6 +51,33 @@ def setup_logging(logging_config: Dict):
 
 setup_logging(config.get('logging', {}))
 
+# --------------------- PID File Handling ---------------------
+
+PID_DIR = 'tmp'
+PID_FILE = os.path.join(PID_DIR, 'tasty-quote-streamer.pid')
+
+def ensure_directory(directory: str):
+    try:
+        os.makedirs(directory, exist_ok=True)
+        logging.debug(f"Ensured directory exists: {directory}")
+    except Exception as e:
+        logging.exception(f"Failed to create directory {directory}: {e}")
+        sys.exit(1)
+
+def write_pid():
+    ensure_directory(PID_DIR)
+    with open(PID_FILE, 'w') as f:
+        f.write(str(os.getpid()))
+    logging.info(f"PID file written at {PID_FILE}")
+
+def remove_pid():
+    if os.path.exists(PID_FILE):
+        try:
+            os.remove(PID_FILE)
+            logging.info(f"PID file {PID_FILE} removed.")
+        except Exception as e:
+            logging.exception(f"Failed to remove PID file {PID_FILE}: {e}")
+
 # --------------------- Global Variables ---------------------
 
 # Shared dictionary to store latest quotes
@@ -66,14 +93,6 @@ def get_today_date() -> str:
 
 def get_current_iso_timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-def ensure_directory(directory: str):
-    try:
-        os.makedirs(directory, exist_ok=True)
-        logging.debug(f"Ensured directory exists: {directory}")
-    except Exception as e:
-        logging.exception(f"Failed to create directory {directory}: {e}")
-        sys.exit(1)
 
 def get_csv_path(directory: str, template: str) -> str:
     filename = template.format(date=get_today_date())
@@ -273,62 +292,70 @@ def load_symbols_from_portfolio(portfolio_file: str) -> (List[str], pd.DataFrame
 
 async def main():
     """
-    Main coroutine to set up the session, streamer, and manage tasks.
+    Main coroutine to set up the session, streamer, manage tasks, and handle PID files.
     """
-    portfolio_file = config['portfolio']['file']
-    output_dir = config['output']['directory']
+    # Write PID file at the start
+    write_pid()
 
-    symbols, df = load_symbols_from_portfolio(portfolio_file)
-
-    if config['streaming'].get('symbols'):
-        # Override symbols if specified in the config file
-        symbols = config['streaming']['symbols']
-        logging.info(f"Overriding symbols from config: {symbols}")
-
-    if not symbols:
-        logging.error("No symbols available to subscribe.")
-        sys.exit(1)
-
-    # Initialize market_price column
-    df['market_price'] = 0.0
-
-    # Register signal handlers for graceful shutdown within the main coroutine
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, handle_shutdown)
-
-    # Create a TastyTrade session with error handling
     try:
-        session = RenewableSession()
-    except Exception as e:
-        logging.exception(f"Failed to create TastyTrade session: {e}")
-        sys.exit(1)
+        portfolio_file = config['portfolio']['file']
+        output_dir = config['output']['directory']
 
-    # Start the streamer and manage tasks
-    async with DXLinkStreamer(session) as streamer:
+        symbols, df = load_symbols_from_portfolio(portfolio_file)
+
+        if config['streaming'].get('symbols'):
+            # Override symbols if specified in the config file
+            symbols = config['streaming']['symbols']
+            logging.info(f"Overriding symbols from config: {symbols}")
+
+        if not symbols:
+            logging.error("No symbols available to subscribe.")
+            sys.exit(1)
+
+        # Initialize market_price column
+        df['market_price'] = 0.0
+
+        # Register signal handlers for graceful shutdown within the main coroutine
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, handle_shutdown)
+
+        # Create a TastyTrade session with error handling
         try:
-            await streamer.subscribe(Quote, symbols)
-            logging.info(f"Subscribed to quotes for symbols: {symbols}")
+            session = RenewableSession()
         except Exception as e:
-            logging.exception(f"Failed to subscribe to quotes: {e}")
-            return
+            logging.exception(f"Failed to create TastyTrade session: {e}")
+            sys.exit(1)
 
-        # Start quote processing task
-        quote_task = asyncio.create_task(process_quotes(streamer))
+        # Start the streamer and manage tasks
+        async with DXLinkStreamer(session) as streamer:
+            try:
+                await streamer.subscribe(Quote, symbols)
+                logging.info(f"Subscribed to quotes for symbols: {symbols}")
+            except Exception as e:
+                logging.exception(f"Failed to subscribe to quotes: {e}")
+                return
 
-        # Start periodic update task
-        periodic_update_task = asyncio.create_task(periodic_task(df, output_dir, symbols))
+            # Start quote processing task
+            quote_task = asyncio.create_task(process_quotes(streamer))
 
-        # Wait until shutdown is triggered
-        await shutdown_flag.wait()
+            # Start periodic update task
+            periodic_update_task = asyncio.create_task(periodic_task(df, output_dir, symbols))
 
-        # Cancel tasks gracefully
-        tasks = [quote_task, periodic_update_task]
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+            # Wait until shutdown is triggered
+            await shutdown_flag.wait()
 
-        logging.info("Shutdown complete.")
+            # Cancel tasks gracefully
+            tasks = [quote_task, periodic_update_task]
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+            logging.info("Shutdown complete.")
+    finally:
+        # Remove PID file on shutdown
+        remove_pid()
+        logging.info("Event loop closed.")
 
 if __name__ == "__main__":
     try:
@@ -336,4 +363,4 @@ if __name__ == "__main__":
     except Exception as e:
         logging.exception(f"An error occurred: {e}")
     finally:
-        logging.info("Event loop closed.")
+        logging.info("Program terminated.")

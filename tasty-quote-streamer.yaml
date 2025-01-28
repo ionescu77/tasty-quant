@@ -1,7 +1,7 @@
 # tasty-quote-streamer.yaml
 
 logging:
-  level: ERROR
+  level: INFO
   file: tasty-quote-streamer.log
 
 portfolio:
