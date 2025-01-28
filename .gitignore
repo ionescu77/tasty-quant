@@ -175,8 +175,10 @@ cython_debug/
 bin/
 pyvenv.cfg
 
-# Peersonal Portfolio Data
+# Personal Portfolio Data
 data/*.csv
+data/*.csv.old
+
 
 # Ignore Jupiter
 etc/*
