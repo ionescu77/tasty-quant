@@ -2,7 +2,7 @@
 
 logging:
   level: INFO
-  file: tasty-quote-streamer.log
+  file: log/tasty-quote-streamer.log
 
 portfolio:
   file: data/positions-watchlist.csv
