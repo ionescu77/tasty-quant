@@ -1,8 +1,8 @@
 # tasty-quote-streamer.yaml
 
 logging:
-  level: ERROR
-  file: tasty-quote-streamer.log
+  level: INFO
+  file: log/tasty-quote-streamer.log
 
 portfolio:
   file: data/positions-watchlist.csv

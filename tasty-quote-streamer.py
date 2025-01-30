@@ -51,6 +51,33 @@ def setup_logging(logging_config: Dict):
 
 setup_logging(config.get('logging', {}))
 
+# --------------------- PID File Handling ---------------------
+
+PID_DIR = 'tmp'
+PID_FILE = os.path.join(PID_DIR, 'tasty-quote-streamer.pid')
+
+def ensure_directory(directory: str):
+    try:
+        os.makedirs(directory, exist_ok=True)
+        logging.debug(f"Ensured directory exists: {directory}")
+    except Exception as e:
+        logging.exception(f"Failed to create directory {directory}: {e}")
+        sys.exit(1)
+
+def write_pid():
+    ensure_directory(PID_DIR)
+    with open(PID_FILE, 'w') as f:
+        f.write(str(os.getpid()))
+    logging.info(f"PID file written at {PID_FILE}")
+
+def remove_pid():
+    if os.path.exists(PID_FILE):
+        try:
+            os.remove(PID_FILE)
+            logging.info(f"PID file {PID_FILE} removed.")
+        except Exception as e:
+            logging.exception(f"Failed to remove PID file {PID_FILE}: {e}")
+
 # --------------------- Global Variables ---------------------
 
 # Shared dictionary to store latest quotes
@@ -66,14 +93,6 @@ def get_today_date() -> str:
 
 def get_current_iso_timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-def ensure_directory(directory: str):
-    try:
-        os.makedirs(directory, exist_ok=True)
-        logging.debug(f"Ensured directory exists: {directory}")
-    except Exception as e:
-        logging.exception(f"Failed to create directory {directory}: {e}")
-        sys.exit(1)
 
 def get_csv_path(directory: str, template: str) -> str:
     filename = template.format(date=get_today_date())
@@ -129,10 +148,12 @@ async def write_positions_csv(positions_csv: str, df: pd.DataFrame):
         how='left'
     )
 
-    # Fill NaN values for missing quotes
-    df_quotes[['bid_price', 'ask_price', 'bid_size', 'ask_size','open_price']] = df_quotes[
-        ['bid_price', 'ask_price', 'bid_size', 'ask_size', 'open_price']
-    ].fillna(Decimal('0'))
+    # Ensure required columns are present
+    required_columns = ['bid_price', 'ask_price', 'bid_size', 'ask_size', 'open_price']
+    for col in required_columns:
+        if col not in df_quotes.columns:
+            df_quotes[col] = Decimal('0')
+    df_quotes[required_columns] = df_quotes[required_columns].fillna(Decimal('0'))
 
     # Prepare the data to write
     df_quotes['timestamp'] = timestamp
@@ -160,12 +181,13 @@ def calculate_strategy_net_credit_debit(df: pd.DataFrame) -> pd.DataFrame:
 async def update_market_prices(df: pd.DataFrame):
     """
     Update the market prices in the DataFrame based on the latest quotes_data.
-    Utilizes vectorized operations for performance optimization.
     """
     # Create a pandas Series from the prices_data
-    prices_series = pd.Series({symbol: float(quote.bid_price + quote.ask_price) / 2
-                               if quote.bid_price and quote.ask_price else 0.0
-                               for symbol, quote in quotes_data.items()})
+    prices_series = pd.Series({
+        symbol: (float(quote.bid_price) + float(quote.ask_price)) / 2
+        for symbol, quote in quotes_data.items()
+        if quote.bid_price is not None and quote.ask_price is not None
+    })
 
     # Map the 'streamer_symbol' to their latest market prices, filling missing with 0.0
     df['market_price'] = df['streamer_symbol'].map(prices_series).fillna(0.0)
@@ -184,7 +206,7 @@ async def process_quotes(streamer: DXLinkStreamer):
     except Exception as e:
         logging.exception(f"Error in process_quotes: {e}")
 
-async def periodic_task(df: pd.DataFrame, output_dir: str):
+async def periodic_task(df: pd.DataFrame, output_dir: str, symbols: List[str]):
     """
     Periodically update market prices, calculate net credit/debit, and write to CSVs.
     """
@@ -197,20 +219,45 @@ async def periodic_task(df: pd.DataFrame, output_dir: str):
     initialize_output_files(output_dir, strategy_csv, positions_csv)
     logging.info(f"Initializing output files: {strategy_csv}, {positions_csv}")
 
-
     while not shutdown_flag.is_set():
         try:
-            logging.info("Updating Market Prices...")
+            # Collect symbols with available bid & ask data (not None)
+            available_symbols = [
+                symbol for symbol in symbols
+                if symbol in quotes_data and
+                quotes_data[symbol].bid_price is not None and
+                quotes_data[symbol].ask_price is not None
+            ]
+            missing_symbols = [symbol for symbol in symbols if symbol not in available_symbols]
 
-            await update_market_prices(df)
-            net_credit_debit = calculate_strategy_net_credit_debit(df)
-            logging.info("Net Credit/Debit Per Strategy:")
-            logging.info(net_credit_debit.to_string(index=False))
+            if missing_symbols:
+                for symbol in missing_symbols:
+                    if symbol not in quotes_data:
+                        logging.warning(f"No quote data received for symbol: {symbol}")
+                    else:
+                        quote = quotes_data[symbol]
+                        if quote.bid_price is None and quote.ask_price is None:
+                            logging.warning(f"Both bid and ask prices are missing for symbol: {symbol}")
+                        elif quote.bid_price is None:
+                            logging.warning(f"Bid price is missing for symbol: {symbol}")
+                        elif quote.ask_price is None:
+                            logging.warning(f"Ask price is missing for symbol: {symbol}")
+                logging.warning(f"Proceeding without data for symbols: {missing_symbols}")
 
-            await write_strategy_csv(strategy_csv, net_credit_debit)
-            await write_positions_csv(positions_csv, df)
+            if available_symbols:
+                filtered_df = df[df['streamer_symbol'].isin(available_symbols)].copy()
+                logging.info("Updating Market Prices...")
+                await update_market_prices(filtered_df)
+                net_credit_debit = calculate_strategy_net_credit_debit(filtered_df)
+                logging.info("Net Credit/Debit Per Strategy:")
+                logging.debug(net_credit_debit.to_string(index=False))
 
-            logging.debug(df[['group_name', 'streamer_symbol', 'quantity', 'market_price']].to_string(index=False))
+                await write_strategy_csv(strategy_csv, net_credit_debit)
+                await write_positions_csv(positions_csv, filtered_df)
+                logging.debug(filtered_df[['group_name', 'streamer_symbol', 'quantity', 'market_price']].to_string(index=False))
+            else:
+                logging.warning("No symbols have complete bid & ask data for this cycle. Skipping CSV write.")
+
         except Exception as e:
             logging.exception(f"Error in periodic_task: {e}")
 
@@ -220,14 +267,16 @@ async def periodic_task(df: pd.DataFrame, output_dir: str):
         except asyncio.TimeoutError:
             continue
 
-def handle_shutdown(loop):
+
+
+def handle_shutdown():
     """
     Signal handler to initiate graceful shutdown.
     """
     logging.info("Received stop signal. Initiating graceful shutdown...")
     shutdown_flag.set()
 
-def load_symbols_from_portfolio(portfolio_file: str) -> List[str]:
+def load_symbols_from_portfolio(portfolio_file: str) -> (List[str], pd.DataFrame):
     try:
         df = pd.read_csv(portfolio_file)
         symbols = df['streamer_symbol'].dropna().unique().tolist()
@@ -245,68 +294,75 @@ def load_symbols_from_portfolio(portfolio_file: str) -> List[str]:
 
 async def main():
     """
-    Main coroutine to set up the session, streamer, and manage tasks.
+    Main coroutine to set up the session, streamer, manage tasks, and handle PID files.
     """
-    portfolio_file = config['portfolio']['file']
-    output_dir = config['output']['directory']
+    # Write PID file at the start
+    write_pid()
 
-    symbols, df = load_symbols_from_portfolio(portfolio_file)
-
-    if config['streaming'].get('symbols'):
-        # Override symbols if specified in the config file
-        symbols = config['streaming']['symbols']
-        logging.info(f"Overriding symbols from config: {symbols}")
-
-    if not symbols:
-        logging.error("No symbols available to subscribe.")
-        sys.exit(1)
-
-    # Initialize market_price column
-    df['market_price'] = 0.0
-
-    # Create a TastyTrade session with error handling
     try:
-        session = RenewableSession()
-    except Exception as e:
-        logging.exception(f"Failed to create TastyTrade session: {e}")
-        sys.exit(1)
+        portfolio_file = config['portfolio']['file']
+        output_dir = config['output']['directory']
 
-    # Start the streamer and manage tasks
-    async with DXLinkStreamer(session) as streamer:
+        symbols, df = load_symbols_from_portfolio(portfolio_file)
+
+        if config['streaming'].get('symbols'):
+            # Override symbols if specified in the config file
+            symbols = config['streaming']['symbols']
+            logging.info(f"Overriding symbols from config: {symbols}")
+
+        if not symbols:
+            logging.error("No symbols available to subscribe.")
+            sys.exit(1)
+
+        # Initialize market_price column
+        df['market_price'] = 0.0
+
+        # Register signal handlers for graceful shutdown within the main coroutine
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, handle_shutdown)
+
+        # Create a TastyTrade session with error handling
         try:
-            await streamer.subscribe(Quote, symbols)
-            logging.info(f"Subscribed to quotes for symbols: {symbols}")
+            session = RenewableSession()
         except Exception as e:
-            logging.exception(f"Failed to subscribe to quotes: {e}")
-            return
+            logging.exception(f"Failed to create TastyTrade session: {e}")
+            sys.exit(1)
 
-        # Start quote processing task
-        quote_task = asyncio.create_task(process_quotes(streamer))
+        # Start the streamer and manage tasks
+        async with DXLinkStreamer(session) as streamer:
+            try:
+                await streamer.subscribe(Quote, symbols)
+                logging.info(f"Subscribed to quotes for symbols: {symbols}")
+            except Exception as e:
+                logging.exception(f"Failed to subscribe to quotes: {e}")
+                return
 
-        # Start periodic update task
-        periodic_update_task = asyncio.create_task(periodic_task(df, output_dir))
+            # Start quote processing task
+            quote_task = asyncio.create_task(process_quotes(streamer))
 
-        # Wait until shutdown is triggered
-        await shutdown_flag.wait()
+            # Start periodic update task
+            periodic_update_task = asyncio.create_task(periodic_task(df, output_dir, symbols))
 
-        # Cancel tasks gracefully
-        tasks = [quote_task, periodic_update_task]
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+            # Wait until shutdown is triggered
+            await shutdown_flag.wait()
 
-        logging.info("Shutdown complete.")
+            # Cancel tasks gracefully
+            tasks = [quote_task, periodic_update_task]
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+            logging.info("Shutdown complete.")
+    finally:
+        # Remove PID file on shutdown
+        remove_pid()
+        logging.info("Event loop closed.")
 
 if __name__ == "__main__":
-    # Get the current event loop
-    loop = asyncio.get_event_loop()
-
-    # Register signal handlers for graceful shutdown
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda: handle_shutdown(loop))
-
     try:
-        loop.run_until_complete(main())
+        asyncio.run(main())
+    except Exception as e:
+        logging.exception(f"An error occurred: {e}")
     finally:
-        loop.close()
-        logging.info("Event loop closed.")
+        logging.info("Program terminated.")

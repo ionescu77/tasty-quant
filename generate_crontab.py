@@ -1,6 +1,6 @@
 import yaml
 import pytz
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import sys
 
@@ -65,17 +65,34 @@ def generate_crontab(config):
     open_local_time_str, open_local_time = convert_utc_to_local(open_utc_time, current_tz)
     close_local_time_str, close_local_time = convert_utc_to_local(close_utc_time, current_tz)
 
+    # Adjust times: start 1 minute before open, stop 1 minute after close
+    start_time = open_local_time - timedelta(minutes=1)
+    stop_time = close_local_time + timedelta(minutes=1)
+
+    # Handle potential day rollover for start_time
+    if start_time.day != open_local_time.day:
+        start_time = start_time.replace(day=open_local_time.day)
+
+    # Handle potential day rollover for stop_time
+    if stop_time.day != close_local_time.day:
+        stop_time = stop_time.replace(day=close_local_time.day)
+
+    start_time_str = start_time.strftime("%M %H")
+    stop_time_str = stop_time.strftime("%M %H")
+
     # Print UTC and Local times
     print(f"Current UTC time: {now_local.astimezone(pytz.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
     print(f"Market Open Time: {open_local_time_str} Local ({'DST' if dst_active else 'Standard'})")
     print(f"Market Close Time: {close_local_time_str} Local ({'DST' if dst_active else 'Standard'})")
     print(f"UTC Market Open: {open_utc_time} UTC")
     print(f"UTC Market Close: {close_utc_time} UTC")
+    print(f"Script Start Time (1 min before open): {start_time_str} Local")
+    print(f"Script Stop Time (1 min after close): {stop_time_str} Local")
 
     # Generate crontab entries with correct field counts (five fields)
     crontab_entries = [
-        f"# Start the script at market open ({open_utc_time} UTC)\n{open_local_time_str} * * * cd {project_directory} && {python_path} tasty-quote-streamer.py",
-        f"# Stop the script at market close ({close_utc_time} UTC)\n{close_local_time_str} * * * cd {project_directory} && {python_path} shutdown_script.py"
+        f"# Start the script 1 minute before market open ({start_time_str} Local)\n{start_time_str} * * * cd {project_directory} && {python_path} start_script.sh",
+        f"# Stop the script 1 minute after market close ({stop_time_str} Local)\n{stop_time_str} * * * cd {project_directory} && {python_path} shutdown_script.py"
     ]
 
     return "\n".join(crontab_entries)
@@ -96,4 +113,4 @@ def main():
         f.write(crontab)
 
 if __name__ == "__main__":
-        main()
+    main()
