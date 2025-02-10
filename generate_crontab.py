@@ -67,9 +67,20 @@ def generate_crontab(config):
     open_local_time_str, open_local_time = convert_utc_to_local(open_utc_time, current_tz)
     close_local_time_str, close_local_time = convert_utc_to_local(close_utc_time, current_tz)
 
-    # Adjust times: start at market open, stop at market close
-    start_time_str = open_local_time.strftime("%M %H")
-    stop_time_str = close_local_time.strftime("%M %H")
+    # Adjust times: start 1 minute before open, stop 1 minute after close
+    start_time = open_local_time - timedelta(minutes=1)
+    stop_time = close_local_time + timedelta(minutes=1)
+
+    # Handle potential day rollover for start_time
+    if start_time.day != open_local_time.day:
+        start_time = start_time.replace(day=open_local_time.day)
+
+    # Handle potential day rollover for stop_time
+    if stop_time.day != close_local_time.day:
+        stop_time = stop_time.replace(day=close_local_time.day)
+
+    start_time_str = start_time.strftime("%M %H")
+    stop_time_str = stop_time.strftime("%M %H")
 
     # Print UTC and Local times
     print(f"Current UTC time: {now_local.astimezone(pytz.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
@@ -77,23 +88,23 @@ def generate_crontab(config):
     print(f"Market Close Time: {close_local_time_str} Local ({'DST' if dst_active else 'Standard'})")
     print(f"UTC Market Open: {open_utc_time} UTC")
     print(f"UTC Market Close: {close_utc_time} UTC")
-    print(f"Script Start Time (market open): {start_time_str} Local")
-    print(f"Script Stop Time (market close): {stop_time_str} Local")
+    print(f"Script Start Time (1 min before open): {start_time_str} Local")
+    print(f"Script Stop Time (1 min after close): {stop_time_str} Local")
 
-    # Define weekdays (Monday=1, Sunday=7)
+    # Define weekdays (1=Monday, 5=Friday)
     weekdays = '1-5'
 
-    # Define the paths for scripts
+    # Define the paths for scripts and logs
     start_script = os.path.join(project_directory, 'start_script.sh')
     shutdown_script = os.path.join(project_directory, 'shutdown_script.py')
     test_log = os.path.join(project_directory, 'log', 'shutdown_script.log')
 
     # Generate crontab entries with correct field counts (five fields) and restricted to weekdays
     crontab_entries = [
-        f"# Start the script at market open ({open_utc_time} UTC)\n"
+        f"# Start the script 1 minute before market open ({start_time_str} Local)\n"
         f"{start_time_str} * * {weekdays} cd {project_directory} && /bin/bash ./start_script.sh",
 
-        f"# Stop the script at market close ({close_utc_time} UTC)\n"
+        f"# Stop the script 1 minute after market close ({stop_time_str} Local)\n"
         f"{stop_time_str} * * {weekdays} cd {project_directory} && {python_path} shutdown_script.py",
 
         f"\n# Test cronjobs",
@@ -109,8 +120,12 @@ def generate_crontab(config):
 def main():
     config_file = 'tasty-quote-streamer.yaml'
 
+    # Determine the absolute path of the config file
+    script_directory = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(script_directory, config_file)
+
     # Load the configuration
-    config = load_config(config_file)
+    config = load_config(config_path)
 
     # Generate crontab entries
     crontab = generate_crontab(config)
