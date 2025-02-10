@@ -1,3 +1,5 @@
+# tasty-quant/generate_crontab.py
+
 import yaml
 import pytz
 from datetime import datetime, timedelta
@@ -45,8 +47,8 @@ def is_dst(local_tz: str):
 
 # Generate crontab entries based on the configuration
 def generate_crontab(config):
-    python_path = sys.executable
-    project_directory = os.path.dirname(os.path.abspath(__file__))
+    python_path = sys.executable  # Path to the current Python interpreter
+    project_directory = os.path.dirname(os.path.abspath(__file__))  # Project directory
 
     # Extract configuration
     current_tz = config['market']['timezone']
@@ -65,20 +67,9 @@ def generate_crontab(config):
     open_local_time_str, open_local_time = convert_utc_to_local(open_utc_time, current_tz)
     close_local_time_str, close_local_time = convert_utc_to_local(close_utc_time, current_tz)
 
-    # Adjust times: start 1 minute before open, stop 1 minute after close
-    start_time = open_local_time - timedelta(minutes=1)
-    stop_time = close_local_time + timedelta(minutes=1)
-
-    # Handle potential day rollover for start_time
-    if start_time.day != open_local_time.day:
-        start_time = start_time.replace(day=open_local_time.day)
-
-    # Handle potential day rollover for stop_time
-    if stop_time.day != close_local_time.day:
-        stop_time = stop_time.replace(day=close_local_time.day)
-
-    start_time_str = start_time.strftime("%M %H")
-    stop_time_str = stop_time.strftime("%M %H")
+    # Adjust times: start at market open, stop at market close
+    start_time_str = open_local_time.strftime("%M %H")
+    stop_time_str = close_local_time.strftime("%M %H")
 
     # Print UTC and Local times
     print(f"Current UTC time: {now_local.astimezone(pytz.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
@@ -86,15 +77,33 @@ def generate_crontab(config):
     print(f"Market Close Time: {close_local_time_str} Local ({'DST' if dst_active else 'Standard'})")
     print(f"UTC Market Open: {open_utc_time} UTC")
     print(f"UTC Market Close: {close_utc_time} UTC")
-    print(f"Script Start Time (1 min before open): {start_time_str} Local")
-    print(f"Script Stop Time (1 min after close): {stop_time_str} Local")
+    print(f"Script Start Time (market open): {start_time_str} Local")
+    print(f"Script Stop Time (market close): {stop_time_str} Local")
 
-    # Generate crontab entries with correct field counts (five fields)
+    # Define weekdays (Monday=1, Sunday=7)
+    weekdays = '1-5'
+
+    # Define the paths for scripts
+    start_script = os.path.join(project_directory, 'start_script.sh')
+    shutdown_script = os.path.join(project_directory, 'shutdown_script.py')
+    test_log = os.path.join(project_directory, 'log', 'shutdown_script.log')
+
+    # Generate crontab entries with correct field counts (five fields) and restricted to weekdays
     crontab_entries = [
-        f"# Start the script 1 minute before market open ({start_time_str} Local)\n{start_time_str} * * * cd {project_directory} && {python_path} start_script.sh",
-        f"# Stop the script 1 minute after market close ({stop_time_str} Local)\n{stop_time_str} * * * cd {project_directory} && {python_path} shutdown_script.py"
+        f"# Start the script at market open ({open_utc_time} UTC)\n"
+        f"{start_time_str} * * {weekdays} cd {project_directory} && /bin/bash ./start_script.sh",
+
+        f"# Stop the script at market close ({close_utc_time} UTC)\n"
+        f"{stop_time_str} * * {weekdays} cd {project_directory} && {python_path} shutdown_script.py",
+
+        f"\n# Test cronjobs",
+
+        f"02 9 * * {weekdays} cd {project_directory} && {python_path} -c \"print('Cron job executed successfully START')\" >> {test_log} 2>&1",
+
+        f"03 9 * * {weekdays} cd {project_directory} && {python_path} -c \"print('Cron job executed successfully STOP')\" >> {test_log} 2>&1"
     ]
 
+    # Combine all entries into a single string separated by newlines
     return "\n".join(crontab_entries)
 
 def main():
