@@ -243,21 +243,6 @@ else:
     quotes_df = load_quotes(selected_symbol, start_date, end_date)
     strategy_mtm_df = load_strategy_mtm(selected_symbol, start_date, end_date)
 
-    # Debugging: Option to show debugging information
-    show_debug = st.sidebar.checkbox("Show Debugging Information")
-
-    if show_debug:
-        st.subheader("Debugging Information")
-        st.write("### Quotes DataFrame:")
-        st.write(quotes_df.head())
-        st.write("### Quotes DataFrame Data Types:")
-        st.write(quotes_df.dtypes)
-
-        st.write("### Strategy MTM DataFrame:")
-        st.write(strategy_mtm_df.head())
-        st.write("### Strategy MTM DataFrame Data Types:")
-        st.write(strategy_mtm_df.dtypes)
-
     # Check if quote data is available
     if quotes_df.empty:
         st.warning("No quote data available for the selected symbol and date range.")
@@ -288,13 +273,13 @@ else:
 
         # No filtering for 0.00 and NaN values as per user request
 
-        # Plot Price Evolution Chart with Dynamic Strategy
+        # Plot Price Evolution Charts
         st.header(f"Price Evolution for {selected_symbol}")
 
         # Create a subplot with 2 rows and 1 column
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
                             vertical_spacing=0.1,
-                            subplot_titles=("Long and Short Positions", "Dynamic Strategy"))
+                            subplot_titles=("Long Positions", "Short Positions"))
 
         # Organize Sidebar Toggles without Expanders
         st.sidebar.markdown("### Long Position Series")
@@ -308,7 +293,6 @@ else:
         show_short_mid = st.sidebar.checkbox("Show Short Mid Price", value=True, key="short_mid")
 
         st.sidebar.markdown("### Strategy and Data")
-        show_dynamic_strategy = st.sidebar.checkbox("Show Dynamic Strategy", value=True, key="dynamic_strategy")
         show_strategy_mtm = st.sidebar.checkbox("Show Strategy MTM Net Price", value=True, key="strategy_mtm")
         show_data_tables = st.sidebar.checkbox("Show Data Tables for Verification", value=True, key="data_tables")
         show_acquisition_price = st.sidebar.checkbox("Show Acquisition Price Line", value=True, key="acquisition_price")
@@ -329,7 +313,10 @@ else:
 
         # Plot Long Positions
         if not long_positions.empty:
-            long_agg = long_positions.resample(resample_rule, on='timestamp').agg({
+            # Set 'timestamp' as index for resampling
+            long_positions = long_positions.set_index('timestamp')
+
+            long_agg = long_positions.resample(resample_rule).agg({
                 'bid_price': 'mean',
                 'ask_price': 'mean',
                 'mid_price': 'mean'
@@ -369,7 +356,10 @@ else:
 
         # Plot Short Positions
         if not short_positions.empty:
-            short_agg = short_positions.resample(resample_rule, on='timestamp').agg({
+            # Set 'timestamp' as index for resampling
+            short_positions = short_positions.set_index('timestamp')
+
+            short_agg = short_positions.resample(resample_rule).agg({
                 'bid_price': 'mean',
                 'ask_price': 'mean',
                 'mid_price': 'mean'
@@ -383,7 +373,7 @@ else:
                     name='Short Bid',
                     line=dict(color='orange'),
                     showlegend=True
-                ), row=1, col=1)
+                ), row=2, col=1)
 
             if show_short_ask:
                 fig.add_trace(go.Scatter(
@@ -393,7 +383,7 @@ else:
                     name='Short Ask',
                     line=dict(color='purple'),
                     showlegend=True
-                ), row=1, col=1)
+                ), row=2, col=1)
 
             if show_short_mid:
                 fig.add_trace(go.Scatter(
@@ -403,74 +393,9 @@ else:
                     name='Short Mid Price',
                     line=dict(color='pink'),
                     showlegend=True
-                ), row=1, col=1)
+                ), row=2, col=1)
         else:
             st.info("No Short Positions data available for the selected parameters.")
-
-        # Plot Dynamic Strategy
-        if show_dynamic_strategy:
-            if not strategy_mtm_df.empty:
-                # Process Strategy MTM DataFrame
-                # Convert 'timestamp' to datetime if not already
-                if not pd.api.types.is_datetime64_any_dtype(strategy_mtm_df['timestamp']):
-                    try:
-                        strategy_mtm_df['timestamp'] = pd.to_datetime(strategy_mtm_df['timestamp'], errors='coerce')
-                    except Exception as e:
-                        st.error(f"Error parsing timestamps in Strategy MTM data: {e}")
-                        strategy_mtm_df['timestamp'] = pd.to_datetime(strategy_mtm_df['timestamp'], errors='coerce')
-
-                # Drop rows with invalid timestamps
-                strategy_mtm_df = strategy_mtm_df.dropna(subset=['timestamp'])
-
-                # Sort by timestamp
-                strategy_mtm_df = strategy_mtm_df.sort_values('timestamp')
-
-                # Set 'timestamp' as index for resampling
-                strategy_mtm_df = strategy_mtm_df.set_index('timestamp')
-
-                # Resample
-                if not strategy_mtm_df.empty:
-                    try:
-                        dynamic_strategy = strategy_mtm_df.resample(resample_rule).mean().reset_index()
-                    except Exception as e:
-                        st.error(f"Error during resampling Dynamic Strategy data: {e}")
-                        dynamic_strategy = pd.DataFrame()
-                else:
-                    dynamic_strategy = pd.DataFrame()
-
-                # No filtering for 0.00 and NaN values as per user request
-
-                # Plot Dynamic Strategy
-                if not dynamic_strategy.empty:
-                    fig.add_trace(go.Scatter(
-                        x=dynamic_strategy['timestamp'],
-                        y=dynamic_strategy['net_value'],
-                        mode='lines',
-                        name='Dynamic Strategy',
-                        line=dict(color='darkgreen'),
-                        showlegend=True
-                    ), row=2, col=1)
-
-                    # Plot Acquisition Price Line if enabled
-                    if show_acquisition_price and net_acquisition_price is not None:
-                        # Ensure there are at least two points to plot the line
-                        if not dynamic_strategy.empty:
-                            acquisition_trace = go.Scatter(
-                                x=[dynamic_strategy['timestamp'].min(), dynamic_strategy['timestamp'].max()],
-                                y=[net_acquisition_price, net_acquisition_price],
-                                mode='lines',
-                                name='Acquisition Price',
-                                line=dict(color='orange', dash='dash'),
-                                hovertemplate=f'Acquisition Price: {net_acquisition_price:.2f}<extra></extra>',  # Correct hovertemplate
-                                showlegend=True
-                            )
-                            fig.add_trace(acquisition_trace, row=2, col=1)
-                else:
-                    st.warning("No Dynamic Strategy data available after resampling.")
-            else:
-                st.info("No Strategy MTM data available for Dynamic Strategy.")
-        else:
-            st.info("Dynamic Strategy is hidden.")
 
         # Update layout for better aesthetics
         fig.update_layout(
@@ -487,10 +412,17 @@ else:
 
         # Update y-axes titles
         fig.update_yaxes(title_text="Price", row=1, col=1)
-        fig.update_yaxes(title_text="Dynamic Strategy Net Value", row=2, col=1)
+        fig.update_yaxes(title_text="Price", row=2, col=1)
 
         # Update x-axis title
         fig.update_xaxes(title_text="Timestamp", row=2, col=1)
+
+        # Apply rangebreaks to hide weekends
+        fig.update_xaxes(
+            rangebreaks=[
+                dict(bounds=["sat", "mon"])  # Hide weekends
+            ]
+        )
 
         # Display the Plotly figure in Streamlit
         st.plotly_chart(fig, use_container_width=True)
@@ -505,18 +437,21 @@ else:
             # Drop rows with NaN 'net_value'
             strategy_mtm_df = strategy_mtm_df.dropna(subset=['net_value'])
 
-            # Reset index to have 'timestamp' as a column again
-            strategy_mtm_df = strategy_mtm_df.reset_index()
-
             # Sort by timestamp
+            if not pd.api.types.is_datetime64_any_dtype(strategy_mtm_df['timestamp']):
+                strategy_mtm_df['timestamp'] = pd.to_datetime(strategy_mtm_df['timestamp'], errors='coerce')
+
+            # Drop rows with invalid timestamps
+            strategy_mtm_df = strategy_mtm_df.dropna(subset=['timestamp'])
+
             strategy_mtm_df = strategy_mtm_df.sort_values('timestamp')
 
             # Resample Strategy MTM data
+            strategy_mtm_df = strategy_mtm_df.set_index('timestamp')
+
             if not strategy_mtm_df.empty:
                 try:
-                    strategy_mtm_agg = strategy_mtm_df.resample(resample_rule, on='timestamp').agg({
-                        'net_value': 'mean'
-                    }).reset_index()
+                    strategy_mtm_agg = strategy_mtm_df.resample(resample_rule).agg({'net_value': 'mean'}).reset_index()
                 except Exception as e:
                     st.error(f"Error during resampling Strategy MTM data: {e}")
                     strategy_mtm_agg = pd.DataFrame()
@@ -588,6 +523,13 @@ else:
                     yaxis_title="Net Value"
                 )
 
+                # Apply rangebreaks to hide weekends
+                fig_mtm.update_xaxes(
+                    rangebreaks=[
+                        dict(bounds=["sat", "mon"])  # Hide weekends
+                    ]
+                )
+
                 # Display the Plotly figure in Streamlit
                 st.plotly_chart(fig_mtm, use_container_width=True)
             else:
@@ -617,10 +559,6 @@ else:
             if 'short_agg' in locals() and not short_agg.empty:
                 st.subheader("Short Positions Aggregated Data")
                 st.dataframe(short_agg)
-
-            if 'dynamic_strategy' in locals() and not dynamic_strategy.empty:
-                st.subheader("Dynamic Strategy Aggregated Data")
-                st.dataframe(dynamic_strategy)
 
             if 'strategy_mtm_agg' in locals() and not strategy_mtm_agg.empty:
                 st.subheader("Strategy MTM Aggregated Data")
