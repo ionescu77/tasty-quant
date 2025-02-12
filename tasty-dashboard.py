@@ -199,14 +199,18 @@ else:
         if min_available_date and max_available_date:
             default_start_date = min_available_date
             default_end_date = max_available_date
-            start_date = st.sidebar.date_input("Start Date",
-                                               min_value=min_available_date,
-                                               max_value=max_available_date,
-                                               value=min_available_date)
-            end_date = st.sidebar.date_input("End Date",
-                                             min_value=min_available_date,
-                                             max_value=max_available_date,
-                                             value=max_available_date)
+            start_date = st.sidebar.date_input(
+                "Start Date",
+                min_value=min_available_date,
+                max_value=max_available_date,
+                value=min_available_date
+            )
+            end_date = st.sidebar.date_input(
+                "End Date",
+                min_value=min_available_date,
+                max_value=max_available_date,
+                value=max_available_date
+            )
         else:
             # Fallback to last 7 days if date range is unavailable
             default_end_date = datetime.now().date()
@@ -221,20 +225,22 @@ else:
     # Sidebar - Timeframe and Interval Selection
     st.sidebar.markdown("### Timeframe and Interval Selection")
     timeframe = st.sidebar.selectbox("Select Timeframe", ["All", "Year", "Monthly", "Weekly", "Intraday"])
-    interval = st.sidebar.selectbox("Select Interval",
-                                    ["1 Minute", "5 Minutes", "15 Minutes", "30 Minutes", "1 Hour",
-                                     "Daily", "Weekly", "Monthly"])
+    interval = st.sidebar.selectbox(
+        "Select Interval",
+        ["1 Minute", "5 Minutes", "15 Minutes", "30 Minutes", "1 Hour",
+         "Daily", "Weekly", "Monthly"]
+    )
 
     # Define resampling rule based on interval
     resample_mapping = {
-        "1 Minute": "min",      # Changed from 'T' to 'min' to fix FutureWarning
-        "5 Minutes": "5min",
-        "15 Minutes": "15min",
-        "30 Minutes": "30min",
+        "1 Minute": "min",      # Replaced 'T' with 'min'
+        "5 Minutes": "5min",    # Replaced '5T' with '5min'
+        "15 Minutes": "15min",  # Replaced '15T' with '15min'
+        "30 Minutes": "30min",  # Replaced '30T' with '30min'
         "1 Hour": "1h",
         "Daily": "D",
         "Weekly": "W",
-        "Monthly": "M",
+        "Monthly": "ME",
     }
 
     resample_rule = resample_mapping.get(interval, "D")  # Default to Daily if not found
@@ -249,12 +255,16 @@ else:
     else:
         # Process Quotes DataFrame
         # Convert 'timestamp' to datetime if not already
-        if not pd.api.types.is_datetime64_any_dtype(quotes_df['timestamp']):
-            try:
-                quotes_df['timestamp'] = pd.to_datetime(quotes_df['timestamp'], errors='coerce')
-            except Exception as e:
-                st.error(f"Error parsing timestamps in quotes data: {e}")
-                quotes_df['timestamp'] = pd.to_datetime(quotes_df['timestamp'], errors='coerce')
+        if 'timestamp' in quotes_df.columns:
+            if not pd.api.types.is_datetime64_any_dtype(quotes_df['timestamp']):
+                try:
+                    quotes_df['timestamp'] = pd.to_datetime(quotes_df['timestamp'], errors='coerce')
+                except Exception as e:
+                    st.error(f"Error parsing timestamps in quotes data: {e}")
+                    quotes_df['timestamp'] = pd.to_datetime(quotes_df['timestamp'], errors='coerce')
+        else:
+            st.error("Column 'timestamp' not found in quotes data.")
+            quotes_df['timestamp'] = pd.NaT
 
         # Drop rows with invalid timestamps
         quotes_df = quotes_df.dropna(subset=['timestamp'])
@@ -271,26 +281,36 @@ else:
             st.error("Column 'quantity' not found in quotes data.")
             quotes_df['quantity'] = 0  # Default to 0 to avoid NaN issues
 
-        # No filtering for 0.00 and NaN values as per user request
+        # Plot Price and Size Evolution Charts
+        st.header(f"Price and Size Evolution for {selected_symbol}")
 
-        # Plot Price Evolution Charts
-        st.header(f"Price Evolution for {selected_symbol}")
-
-        # Create a subplot with 2 rows and 1 column
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
-                            vertical_spacing=0.1,
-                            subplot_titles=("Long Positions", "Short Positions"))
+        # Create a subplot with 4 rows and 1 column
+        fig = make_subplots(
+            rows=4, cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.08,
+            subplot_titles=(
+                "Long Positions - Price",
+                "Long Positions - Size",
+                "Short Positions - Price",
+                "Short Positions - Size"
+            )
+        )
 
         # Organize Sidebar Toggles without Expanders
         st.sidebar.markdown("### Long Position Series")
-        show_long_bid = st.sidebar.checkbox("Show Long Bid", value=True, key="long_bid")
-        show_long_ask = st.sidebar.checkbox("Show Long Ask", value=True, key="long_ask")
+        show_long_bid = st.sidebar.checkbox("Show Long Bid Price", value=True, key="long_bid")
+        show_long_ask = st.sidebar.checkbox("Show Long Ask Price", value=True, key="long_ask")
         show_long_mid = st.sidebar.checkbox("Show Long Mid Price", value=True, key="long_mid")
+        show_long_bid_size = st.sidebar.checkbox("Show Long Bid Size", value=True, key="long_bid_size")
+        show_long_ask_size = st.sidebar.checkbox("Show Long Ask Size", value=True, key="long_ask_size")
 
         st.sidebar.markdown("### Short Position Series")
-        show_short_bid = st.sidebar.checkbox("Show Short Bid", value=True, key="short_bid")
-        show_short_ask = st.sidebar.checkbox("Show Short Ask", value=True, key="short_ask")
+        show_short_bid = st.sidebar.checkbox("Show Short Bid Price", value=True, key="short_bid")
+        show_short_ask = st.sidebar.checkbox("Show Short Ask Price", value=True, key="short_ask")
         show_short_mid = st.sidebar.checkbox("Show Short Mid Price", value=True, key="short_mid")
+        show_short_bid_size = st.sidebar.checkbox("Show Short Bid Size", value=True, key="short_bid_size")
+        show_short_ask_size = st.sidebar.checkbox("Show Short Ask Size", value=True, key="short_ask_size")
 
         st.sidebar.markdown("### Strategy and Data")
         show_strategy_mtm = st.sidebar.checkbox("Show Strategy MTM Net Price", value=True, key="strategy_mtm")
@@ -301,7 +321,7 @@ else:
         acquisition_prices = watchlist_df[watchlist_df['group_name'] == selected_symbol]
         if not acquisition_prices.empty:
             net_acquisition_price = (acquisition_prices['quantity'] * acquisition_prices['open_price']).sum()
-            average_open_price = (acquisition_prices['open_price']).mean()  # Optional: Average open price
+            average_open_price = acquisition_prices['open_price'].mean()  # Optional: Average open price
         else:
             net_acquisition_price = None
             average_open_price = None
@@ -311,111 +331,134 @@ else:
         long_positions = quotes_df[quotes_df['quantity'] > 0]
         short_positions = quotes_df[quotes_df['quantity'] < 0]
 
+        # Function to plot positions
+        def plot_positions(positions, row_num, bid_price, ask_price, mid_price, bid_size, ask_size, position_type):
+            """
+            Plot price and size for given positions.
+            """
+            if not positions.empty:
+                # Set 'timestamp' as index for resampling
+                positions = positions.set_index('timestamp')
+
+                # Aggregation includes bid_size and ask_size
+                agg = positions.resample(resample_rule).agg({
+                    'bid_price': 'mean',
+                    'ask_price': 'mean',
+                    'mid_price': 'mean',
+                    'bid_size': 'mean',
+                    'ask_size': 'mean'
+                }).reset_index()
+
+                # Plot Prices
+                if bid_price:
+                    color = 'green'
+                    agg_price = agg['bid_price']
+                    fig.add_trace(go.Scatter(
+                        x=agg['timestamp'],
+                        y=agg_price,
+                        mode='lines',
+                        name=f'{position_type} Bid Price',
+                        line=dict(color=color),
+                        showlegend=True
+                    ), row=row_num, col=1)
+
+                if ask_price:
+                    color = 'red'
+                    agg_price = agg['ask_price']
+                    fig.add_trace(go.Scatter(
+                        x=agg['timestamp'],
+                        y=agg_price,
+                        mode='lines',
+                        name=f'{position_type} Ask Price',
+                        line=dict(color=color),
+                        showlegend=True
+                    ), row=row_num, col=1)
+
+                if mid_price:
+                    color = 'blue'
+                    agg_price = agg['mid_price']
+                    fig.add_trace(go.Scatter(
+                        x=agg['timestamp'],
+                        y=agg_price,
+                        mode='lines',
+                        name=f'{position_type} Mid Price',
+                        line=dict(color=color),
+                        showlegend=True
+                    ), row=row_num, col=1)
+
+                # Plot Sizes
+                if bid_size:
+                    color = 'orange'  # Same color for both Long and Short Bid Size
+                    agg_size = agg['bid_size']
+                    fig.add_trace(go.Scatter(
+                        x=agg['timestamp'],
+                        y=agg_size,
+                        mode='lines',
+                        name=f'{position_type} Bid Size',
+                        line=dict(color=color),
+                        showlegend=True
+                    ), row=row_num + 1, col=1)
+
+                if ask_size:
+                    color = 'purple'  # Same color for both Long and Short Ask Size
+                    agg_size = agg['ask_size']
+                    fig.add_trace(go.Scatter(
+                        x=agg['timestamp'],
+                        y=agg_size,
+                        mode='lines',
+                        name=f'{position_type} Ask Size',
+                        line=dict(color=color),
+                        showlegend=True
+                    ), row=row_num + 1, col=1)
+            else:
+                st.info(f"No {position_type} Positions data available for the selected parameters.")
+
         # Plot Long Positions
-        if not long_positions.empty:
-            # Set 'timestamp' as index for resampling
-            long_positions = long_positions.set_index('timestamp')
-
-            long_agg = long_positions.resample(resample_rule).agg({
-                'bid_price': 'mean',
-                'ask_price': 'mean',
-                'mid_price': 'mean'
-            }).reset_index()
-
-            if show_long_bid:
-                fig.add_trace(go.Scatter(
-                    x=long_agg['timestamp'],
-                    y=long_agg['bid_price'],
-                    mode='lines',
-                    name='Long Bid',
-                    line=dict(color='green'),
-                    showlegend=True
-                ), row=1, col=1)
-
-            if show_long_ask:
-                fig.add_trace(go.Scatter(
-                    x=long_agg['timestamp'],
-                    y=long_agg['ask_price'],
-                    mode='lines',
-                    name='Long Ask',
-                    line=dict(color='red'),
-                    showlegend=True
-                ), row=1, col=1)
-
-            if show_long_mid:
-                fig.add_trace(go.Scatter(
-                    x=long_agg['timestamp'],
-                    y=long_agg['mid_price'],
-                    mode='lines',
-                    name='Long Mid Price',
-                    line=dict(color='blue'),
-                    showlegend=True
-                ), row=1, col=1)
-        else:
-            st.info("No Long Positions data available for the selected parameters.")
+        plot_positions(
+            positions=long_positions,
+            row_num=1,
+            bid_price=show_long_bid,
+            ask_price=show_long_ask,
+            mid_price=show_long_mid,
+            bid_size=show_long_bid_size,
+            ask_size=show_long_ask_size,
+            position_type='Long'
+        )
 
         # Plot Short Positions
-        if not short_positions.empty:
-            # Set 'timestamp' as index for resampling
-            short_positions = short_positions.set_index('timestamp')
-
-            short_agg = short_positions.resample(resample_rule).agg({
-                'bid_price': 'mean',
-                'ask_price': 'mean',
-                'mid_price': 'mean'
-            }).reset_index()
-
-            if show_short_bid:
-                fig.add_trace(go.Scatter(
-                    x=short_agg['timestamp'],
-                    y=short_agg['bid_price'],
-                    mode='lines',
-                    name='Short Bid',
-                    line=dict(color='orange'),
-                    showlegend=True
-                ), row=2, col=1)
-
-            if show_short_ask:
-                fig.add_trace(go.Scatter(
-                    x=short_agg['timestamp'],
-                    y=short_agg['ask_price'],
-                    mode='lines',
-                    name='Short Ask',
-                    line=dict(color='purple'),
-                    showlegend=True
-                ), row=2, col=1)
-
-            if show_short_mid:
-                fig.add_trace(go.Scatter(
-                    x=short_agg['timestamp'],
-                    y=short_agg['mid_price'],
-                    mode='lines',
-                    name='Short Mid Price',
-                    line=dict(color='pink'),
-                    showlegend=True
-                ), row=2, col=1)
-        else:
-            st.info("No Short Positions data available for the selected parameters.")
+        plot_positions(
+            positions=short_positions,
+            row_num=3,
+            bid_price=show_short_bid,
+            ask_price=show_short_ask,
+            mid_price=show_short_mid,
+            bid_size=show_short_bid_size,
+            ask_size=show_short_ask_size,
+            position_type='Short'
+        )
 
         # Update layout for better aesthetics
         fig.update_layout(
-            height=800,  # Adjust height as needed
+            height=1200,  # Adjusted height to accommodate 4 subplots
             hovermode="x unified",  # Unified hover to show all hoverinfos at the same x
             legend=dict(
                 orientation="h",
                 yanchor="bottom",
-                y=1.02,
+                y=-0.15,
                 xanchor="right",
                 x=1
-            )
+            ),
+            title_text=f"Price and Size Evolution for {selected_symbol}"
         )
 
         # Update y-axes titles
         fig.update_yaxes(title_text="Price", row=1, col=1)
-        fig.update_yaxes(title_text="Price", row=2, col=1)
+        fig.update_yaxes(title_text="Size", row=2, col=1)
+        fig.update_yaxes(title_text="Price", row=3, col=1)
+        fig.update_yaxes(title_text="Size", row=4, col=1)
 
         # Update x-axis title
-        fig.update_xaxes(title_text="Timestamp", row=2, col=1)
+        fig.update_xaxes(title_text="Timestamp", row=4, col=1)
 
         # Apply rangebreaks to hide weekends
         fig.update_xaxes(
@@ -438,8 +481,12 @@ else:
             strategy_mtm_df = strategy_mtm_df.dropna(subset=['net_value'])
 
             # Sort by timestamp
-            if not pd.api.types.is_datetime64_any_dtype(strategy_mtm_df['timestamp']):
-                strategy_mtm_df['timestamp'] = pd.to_datetime(strategy_mtm_df['timestamp'], errors='coerce')
+            if 'timestamp' in strategy_mtm_df.columns:
+                if not pd.api.types.is_datetime64_any_dtype(strategy_mtm_df['timestamp']):
+                    strategy_mtm_df['timestamp'] = pd.to_datetime(strategy_mtm_df['timestamp'], errors='coerce')
+            else:
+                st.error("Column 'timestamp' not found in Strategy MTM data.")
+                strategy_mtm_df['timestamp'] = pd.NaT
 
             # Drop rows with invalid timestamps
             strategy_mtm_df = strategy_mtm_df.dropna(subset=['timestamp'])
@@ -447,9 +494,8 @@ else:
             strategy_mtm_df = strategy_mtm_df.sort_values('timestamp')
 
             # Resample Strategy MTM data
-            strategy_mtm_df = strategy_mtm_df.set_index('timestamp')
-
-            if not strategy_mtm_df.empty:
+            if 'timestamp' in strategy_mtm_df.columns:
+                strategy_mtm_df = strategy_mtm_df.set_index('timestamp')
                 try:
                     strategy_mtm_agg = strategy_mtm_df.resample(resample_rule).agg({'net_value': 'mean'}).reset_index()
                 except Exception as e:
@@ -478,24 +524,28 @@ else:
                 ))
 
                 # Add min value annotation
-                fig_mtm.add_annotation(
-                    x=strategy_mtm_agg.loc[strategy_mtm_agg['net_value'].idxmin(), 'timestamp'],
-                    y=min_value,
-                    text=f'Min: {min_value:.2f}',
-                    showarrow=True,
-                    arrowhead=1,
-                    yshift=10
-                )
+                min_idx = strategy_mtm_agg['net_value'].idxmin()
+                if pd.notna(min_idx):
+                    fig_mtm.add_annotation(
+                        x=strategy_mtm_agg.loc[min_idx, 'timestamp'],
+                        y=strategy_mtm_agg.loc[min_idx, 'net_value'],
+                        text=f'Min: {strategy_mtm_agg.loc[min_idx, "net_value"]:.2f}',
+                        showarrow=True,
+                        arrowhead=1,
+                        yshift=10
+                    )
 
                 # Add max value annotation
-                fig_mtm.add_annotation(
-                    x=strategy_mtm_agg.loc[strategy_mtm_agg['net_value'].idxmax(), 'timestamp'],
-                    y=max_value,
-                    text=f'Max: {max_value:.2f}',
-                    showarrow=True,
-                    arrowhead=1,
-                    yshift=-10
-                )
+                max_idx = strategy_mtm_agg['net_value'].idxmax()
+                if pd.notna(max_idx):
+                    fig_mtm.add_annotation(
+                        x=strategy_mtm_agg.loc[max_idx, 'timestamp'],
+                        y=strategy_mtm_agg.loc[max_idx, 'net_value'],
+                        text=f'Max: {strategy_mtm_agg.loc[max_idx, "net_value"]:.2f}',
+                        showarrow=True,
+                        arrowhead=1,
+                        yshift=-10
+                    )
 
                 # Plot Acquisition Price Line if enabled and available
                 if show_acquisition_price and net_acquisition_price is not None:
@@ -543,22 +593,27 @@ else:
 
             if not quotes_df.empty:
                 st.subheader("Quotes DataFrame")
-                # Merge 'open_price' from watchlist into quotes_df
-                merged_quotes = quotes_df.merge(acquisition_prices[['streamer_symbol', 'open_price']],
-                                               on='streamer_symbol', how='left')
-                st.dataframe(merged_quotes)
+                # Merge 'open_price' from watchlist into quotes_df if applicable
+                if 'streamer_symbol' in quotes_df.columns and 'open_price' in acquisition_prices.columns:
+                    merged_quotes = quotes_df.merge(acquisition_prices[['streamer_symbol', 'open_price']],
+                                                   on='streamer_symbol', how='left')
+                    st.dataframe(merged_quotes)
+                else:
+                    st.warning("Required columns for merging 'open_price' not found.")
+                    st.dataframe(quotes_df)
 
             if not strategy_mtm_df.empty:
                 st.subheader("Strategy MTM DataFrame")
                 st.dataframe(strategy_mtm_df)
 
-            if 'long_agg' in locals() and not long_agg.empty:
-                st.subheader("Long Positions Aggregated Data")
-                st.dataframe(long_agg)
+            # Display aggregated data if available
+            if 'long_positions' in locals() and not long_positions.empty:
+                st.subheader("Long Positions DataFrame")
+                st.dataframe(long_positions)
 
-            if 'short_agg' in locals() and not short_agg.empty:
-                st.subheader("Short Positions Aggregated Data")
-                st.dataframe(short_agg)
+            if 'short_positions' in locals() and not short_positions.empty:
+                st.subheader("Short Positions DataFrame")
+                st.dataframe(short_positions)
 
             if 'strategy_mtm_agg' in locals() and not strategy_mtm_agg.empty:
                 st.subheader("Strategy MTM Aggregated Data")
